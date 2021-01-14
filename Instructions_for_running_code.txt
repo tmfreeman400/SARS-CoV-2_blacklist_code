@@ -1,0 +1,9 @@
+##To reproduce all of the results from this study, run the following code in this order:
+
+1) The code for generating the SARS-CoV-2 Incremental Database, which is present in the folder "IncDB_code" and explained in the file "Workflow_for_IncDB_code".
+
+2) main_python_script.py (Python 3 script)
+
+3) main_R_script.R (R script)
+
+This reproduces all results and figures for this study.
