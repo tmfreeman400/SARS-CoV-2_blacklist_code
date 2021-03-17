@@ -733,6 +733,7 @@ for seq in range(4):
     colorlist_scrambled = [colorlist[i] for i in scrambled_index]
     
     C = np.array(colorlist_scrambled)
+    ##ax = plt.subplot(1, 2, 1)
     for i in range(len(mean_all_5_scrambled)):
         plt.scatter(
         mean_all_5_scrambled[(i*1):(i*1 + 1)],
@@ -742,11 +743,13 @@ for seq in range(4):
     #Set axes limits and add axes labels and title
     plt.xlim((0, 1.0))
     plt.ylim((0, 0.6))
+    ##plt.tick_params(axis='x', which='both',
+    ##                bottom=False, top=False, labelbottom=False)
     plt.xlabel("Aggregate allelic fraction")
     plt.ylabel("Standard deviation")
-    plt.title("Observed aggregate allelic fraction vs."+"\n"+
-               "standard deviation for "+str(number_of_patients)+
-               " patients (-DEL)")
+    #plt.title("Observed aggregate allelic fraction vs."+"\n"+
+    #           "standard deviation for "+str(number_of_patients)+
+    #           " patients (-DEL)")
     
     hA = mpatches.Patch(color=('#%02x%02x%02x' % (70, 168, 108)), label='A')
     hC = mpatches.Patch(color=('#%02x%02x%02x' % (46, 169, 176)), label='C')
@@ -754,7 +757,7 @@ for seq in range(4):
     hT = mpatches.Patch(color=('#%02x%02x%02x' % (234, 93, 78)), label='T')
     hDEL = mpatches.Patch(color=('#%02x%02x%02x' % (0, 0, 0)), label='DEL')
     hINS = mpatches.Patch(color=('#%02x%02x%02x' % (102, 103, 173)), label='INS')   
-    plt.legend(handles=[hA,hC,hG,hT,hINS])    
+    #plt.legend(handles=[hA,hC,hG,hT,hINS])    
     
     #%%
     #Read in lower and upper boundaries for the confidence interval used to 
@@ -776,12 +779,15 @@ for seq in range(4):
     line2 = plt.plot(
         [x/100 for x in range(101)], max_sd_bound, '#FED47A',
          linewidth=2.0, label="Model upper threshold")
+    ##ax.text(-0.18, 0.9, 'A', transform=ax.transAxes, 
+    ##    size=20, weight='bold')
+
     
     #Save plot using names of the format:
     #suspect_plot_scatter_basecaller_primertrimmed_nonreferenceonly_noDEL
     plot_filepath = (output_folder_path+'suspect_plot_scatter_'+
     IncDB_names[seq]+'_nonREF_noDEL')
-    plt.savefig(plot_filepath+'.png', bbox_inches="tight")
+    plt.savefig(plot_filepath+'.png', bbox_inches="tight", dpi=1000)
     plt.savefig(plot_filepath+'.pdf', bbox_inches="tight")
     plt.close()
 
@@ -812,6 +818,7 @@ for seq in range(4):
     colorlist_scrambled = [colorlist[i] for i in scrambled_index]
     
     C = np.array(colorlist_scrambled)
+    ##ax = plt.subplot(1, 2, 2)
     for i in range(len(mean_all_5_scrambled)):
         plt.scatter(
         mean_all_5_scrambled[(i*1):(i*1 + 1)],
@@ -822,10 +829,10 @@ for seq in range(4):
     plt.xlim((0, 1.0))
     plt.ylim((0, 0.6))
     plt.xlabel("Aggregate allelic fraction")
-    plt.ylabel("Standard deviation")
-    plt.title("Observed aggregate allelic fraction vs."+"\n"+
-               "standard deviation for "+str(number_of_patients)+
-               " patients (+DEL)")
+    #plt.ylabel("Standard deviation")
+    #plt.title("Observed aggregate allelic fraction vs."+"\n"+
+    #           "standard deviation for "+str(number_of_patients)+
+    #           " patients (+DEL)")
     
     hA = mpatches.Patch(color=('#%02x%02x%02x' % (70, 168, 108)), label='A')
     hC = mpatches.Patch(color=('#%02x%02x%02x' % (46, 169, 176)), label='C')
@@ -833,7 +840,8 @@ for seq in range(4):
     hT = mpatches.Patch(color=('#%02x%02x%02x' % (234, 93, 78)), label='T')
     hDEL = mpatches.Patch(color=('#%02x%02x%02x' % (0, 0, 0)), label='DEL')
     hINS = mpatches.Patch(color=('#%02x%02x%02x' % (102, 103, 173)), label='INS')   
-    plt.legend(handles=[hA,hC,hG,hT,hDEL,hINS])    
+    plt.legend(handles=[hA,hC,hG,hT,hDEL,hINS])
+       
     
     #%%
     #Read in lower and upper boundaries for the confidence interval used to 
@@ -854,15 +862,31 @@ for seq in range(4):
          linewidth=2.0, label="Model lower threshold")
     line2 = plt.plot(
         [x/100 for x in range(101)], max_sd_bound, '#FED47A',
-         linewidth=2.0, label="Model upper threshold")
-
-    #Save plot using names of the format:
-    #suspect_plot_scatter_basecaller_primertrimmed_nonreferenceonly_withDEL
+         linewidth=2.0, label="Model upper threshold")  
+         
     plot_filepath = (output_folder_path+'suspect_plot_scatter_'+
     IncDB_names[seq]+'_nonREF_withDEL')
-    plt.savefig(plot_filepath+'.png', bbox_inches="tight")
+    plt.savefig(plot_filepath+'.png', bbox_inches="tight", dpi=1000)
     plt.savefig(plot_filepath+'.pdf', bbox_inches="tight")
     plt.close()
+         
+    ##ax.text(-0.32, 0.95, 'E', transform=ax.transAxes, 
+    ##    size=20, weight='bold')
+    ##plt.tight_layout()
+    ##plt.subplots_adjust(right=0.82, wspace=0.9)
+    ##ax.legend(handles=[hA,hC,hG,hT,hDEL,hINS],
+    ##          labels=["A", "C", "G", "T", "DEL", "INS"],
+    ##          bbox_to_anchor=(1.25, 1.5), loc='centre') 
+    ##plt.show()
+    
+    
+    #Save plot using names of the format:
+    ##suspect_plot_scatter_basecaller_primertrimmed_nonreferenceonly_withDEL
+    ##plot_filepath = (output_folder_path+'suspect_plot_scatter_'+
+    ##IncDB_names[seq]+'_nonREFAB')
+    ##plt.savefig(plot_filepath+'.png', bbox_inches="tight")
+    ##plt.savefig(plot_filepath+'.pdf', bbox_inches="tight")
+    ##plt.close()
 
     #%%
     #For each sequencing method, write a file containing the coordinates of
