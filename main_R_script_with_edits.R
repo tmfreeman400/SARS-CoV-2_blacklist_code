@@ -20,6 +20,8 @@
 ##system("sudo apt-get install -y librsvg2-dev")
 #install.packages('rsvg')
 #install.packages("VennDiagram")
+#install.packages("png")
+
 
 library('devtools')
 library(GGally)
@@ -36,6 +38,8 @@ library("V8")
 library('DiagrammeRsvg')
 library('rsvg')
 library(VennDiagram) 
+library(png)
+library(magick)
 
 #Set ggplot theme for plots
 ggplot2::theme_set(ggplot2::theme_bw())
@@ -46,6 +50,11 @@ vcf_directory <- '/media/tim/DATA/MovedDownloads/coronavirus_experiments/IncDB_c
 #which should be saved within nested folders in the form "variant_caller/basecaller/SHEF-yourpatientID.othertext.vcf"
 blacklist_directory <- '/media/tim/DATA/MovedDownloads/coronavirus_experiments/blacklists/' #Where we will save blacklist files CONSIDER HAVING THIS SAME AS MAIN
 soloDBs_directory <- '/media/tim/DATA/MovedDownloads/coronavirus_experiments/IncDB_code-master/nanomed_884/soloDBs/' #Where soloDB files are saved for all patients
+incdb_directory <- '/media/tim/DATA/MovedDownloads/coronavirus_experiments/IncDB_code-master/nanomed_884/' #This is the directory containing the IncDB data
+#within subdirectories titled "A","C","G","T","DEL","INS", including files named with the format "{allele}_minSDratios_{basecaller}.bed"
+pyclone_results_directory <- '/media/tim/DATA/MovedDownloads/coronavirus_experiments/pyclone_results/' #This directory contains subdirectories for
+#individual samples run with PyClone, with further divisions for variant and basecallers which contain the PyClone results,
+#e.g. 'SHEF-CD39D/nanopolish/hac4/tables/loci.tsv'
 
 #Also provide paths to the following required files:
 fasta_path = '/media/tim/DATA/MovedDownloads/coronavirus_experiments/nCoV-2019.reference.fasta' #Path to SARS-CoV-2 reference sequence fasta file
@@ -65,6 +74,7 @@ setwd(vcf_directory)
 
 #Predefined function used to glue all values together within a given row of a data frame
 rowglue <- function(df){vectorresult <- rep(NA, nrow(df)); for(i in 1:nrow(df)){vectorresult[i] <- paste0(df[i,], collapse = "")}; return(vectorresult)}
+rowglue2 <- function(df){vectorresult <- rep(NA, nrow(df)); for(i in 1:nrow(df)){vectorresult[i] <- paste0(df[i,], collapse = "_")}; return(vectorresult)}
 
 #Predefined function to capitalise first letter of string
 CapStr <- function(y) {
@@ -106,6 +116,9 @@ all_vdata2b <- all_vdatab[-1,]
 # Create data frame with only AF data for each patient/variant combination, 1st col patient, 2nd col variant, remaining columns basecallers
 #Get list of all unique patient/variant combinations
 
+fig1_ACBD <- list()
+list_index <- 1
+
 for(temp_vcaller in c("nanopolish", "medaka")){
   
 AF_set_all <- all_vdata2b[which(all_vdata2b$VCALLER == temp_vcaller),]
@@ -134,6 +147,20 @@ lowerfun <- function(data,mapping){
     #geom_cor(method = "pearson", hjust=0.5, vjust=0, size =2.5, col='red') +
     coord_cartesian(xlim = c(0,1), ylim = c(0,1))
 }
+upperfun <- function(data,mapping){
+  ggplot(data = data, mapping = mapping)+
+    stat_cor(r.digits = 3, method = "pearson",
+             aes(label = paste(..r..)), vjust=2.2, hjust=-0.2,
+             size =4.5, col='red') +
+    coord_cartesian(xlim = c(0,1), ylim = c(0,1))
+}
+upperfun2 <- function(data,mapping){
+  ggplot(data = data, mapping = mapping)+
+    stat_cor(r.digits = 3, method = "pearson",
+             aes(label = paste(..r..)), vjust=1.5, hjust=-0.2,
+             size =4.5, col='red') +
+    coord_cartesian(xlim = c(0,1), ylim = c(0,1))
+}
 lowerfun_bigger_points <- function(data,mapping){
   ggplot(data = data, mapping = mapping)+
     geom_point(alpha = 0.2, size=2)+
@@ -145,7 +172,11 @@ lowerfun_bigger_points <- function(data,mapping){
 #Create GGALLY plot using ggpairs()
 
 p_ggpairs <- ggpairs(data = gg_AF_data2, title=paste0("Allele frequency correlogram between basecallers at variants called in ", temp_vcaller),
-                     lower = list(continuous = wrap(lowerfun))) + theme(panel.spacing = unit(0.75, "lines"))
+                     lower = list(continuous = wrap(lowerfun)), upper = list(continuous = wrap(upperfun))) + 
+                     theme(panel.spacing = unit(0.75, "lines")) +
+                     theme(axis.text.x=element_text(colour="black", size=12),
+                           axis.text.y=element_text(colour="black", size=12),
+                           text = element_text(colour="black", size=14))
 
 pdf(file=paste0(main_project_directory, "corr_bcaller_AF_", temp_vcaller,".pdf"), width = 7, height = 6)
 print(p_ggpairs)
@@ -154,6 +185,9 @@ dev.off()
 png(file=paste0(main_project_directory, "corr_bcaller_AF_", temp_vcaller,".png"), width = 525, height = 450)
 print(p_ggpairs)
 dev.off()
+
+fig1_ACBD[[list_index]] <- p_ggpairs
+list_index <- list_index + 1
 
 #Also need to plot correlogram showing the proportions of patients in which each variant was called for each basecaller
 #For each patient in gg_AF_data replace AF with 1 if called and 0 if not called, then strip patient info and count number of each variant
@@ -177,7 +211,11 @@ gg_PATPROP_data[2:5] <- gg_PATPROP_data[2:5]/884
 gg_PATPROP_data2 <- gg_PATPROP_data[,2:5]
 p_ggpairs_ALT <- ggpairs(data = gg_PATPROP_data2, title=paste0(CapStr(temp_vcaller), " variant frequency correlogram between basecallers in 884 patients"),
                               lower = list(continuous = wrap(lowerfun_bigger_points)),
-                              diag = list(continuous = "barDiag")) + theme(panel.spacing = unit(0.75, "lines"))
+                              diag = list(continuous = "barDiag"), upper = list(continuous = wrap(upperfun2))) + 
+  theme(panel.spacing = unit(0.75, "lines")) +
+  theme(axis.text.x=element_text(colour="black", size=12),
+        axis.text.y=element_text(colour="black", size=12),
+        text = element_text(colour="black", size=14)) + theme(panel.spacing = unit(0.75, "lines"))
 
 pdf(file=paste0(main_project_directory, "corr_bcaller_PF_", temp_vcaller,".pdf"), width = 7, height = 6)
 print(p_ggpairs_ALT)
@@ -187,7 +225,54 @@ png(file=paste0(main_project_directory, "corr_bcaller_PF_", temp_vcaller,".png")
 print(p_ggpairs_ALT)
 dev.off()
 
+fig1_ACBD[[list_index]] <- p_ggpairs_ALT
+list_index <- list_index + 1
+
 }
+
+#Load in python matplotlib figues to add to plot panel
+pyimg1 <- readPNG(paste0(main_project_directory, "suspect_plot_scatter_hac_nonREF_noDEL.png"))
+pyimg2 <- readPNG(paste0(main_project_directory, "suspect_plot_scatter_hac_nonREF_withDEL.png"))
+py1 = ggplot() + 
+  background_image(pyimg1) +
+  # This ensures that the image has no extra padding at the edges since this is added separately
+  theme(plot.margin = margin(t=0.7, l=0.4, r=0.2, b=0, unit = "cm"),plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+py2 = ggplot() + 
+  background_image(pyimg2) +
+  # This ensures that the image leaves some space at the edges
+  theme(plot.margin = margin(t=0.7, l=0.8, r=0.2, b=0, unit = "cm"),
+        plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+
+#Join different figures into single panel for Figure 1 of manuscript
+fig1_ACBD[[1]] <- fig1_ACBD[[1]] + ggtitle(label = NULL) + scale_x_continuous(n.breaks = 2) + scale_y_continuous(n.breaks = 2) + theme(plot.margin=margin(t=1.0, l=1.2, r=0.2, b=0.0, unit = "cm"))
+fig1_ACBD[[3]] <- fig1_ACBD[[3]] + ggtitle(label = NULL) + scale_x_continuous(n.breaks = 2) + scale_y_continuous(labels = NULL) + theme(plot.margin=margin(t=1.0, l=1.2, r=0.2, b=0.0, unit = "cm"))
+fig1_ACBD[[2]] <- fig1_ACBD[[2]] + ggtitle(label = "Nanopolish") + theme(plot.title = element_text(hjust = 0.5)) + scale_x_continuous(labels = NULL) + scale_y_continuous(n.breaks = 2) + theme(plot.margin=margin(t=0.2, l=1.2, r=0.2, b=0.0, unit = "cm"))
+fig1_ACBD[[4]] <- fig1_ACBD[[4]] + ggtitle(label = "Medaka") + theme(plot.title = element_text(hjust = 0.5)) + scale_x_continuous(labels = NULL) + scale_y_continuous(labels = NULL) + theme(plot.margin=margin(t=0.2, l=1.2, r=0.2, b=0.0, unit = "cm"))
+
+fig1 <- ggarrange(plotlist = list(ggmatrix_gtable(fig1_ACBD[[2]]),
+                                  ggmatrix_gtable(fig1_ACBD[[4]]),
+                                  ggmatrix_gtable(fig1_ACBD[[1]]),
+                                  ggmatrix_gtable(fig1_ACBD[[3]]),
+                                  py1,
+                                  py2), ncol=2, nrow=3, labels = c('A', 'B', 'C', 'D', 'E', 'F'),
+                  label.x = 0.02, label.y = 0.9, font.label = list(size=18, color='black'), heights = c(1,1,0.8,0.8,0.8,0.8))
+
+
+#Save Figure 1 for manuscript
+pdf(file=paste0(main_project_directory, "fig1.pdf"), width = 8.4, height = 10.7)
+print(fig1)
+dev.off()
+
+#Important! Higher resolution obtained by converting PDF image to PNG outside of R rather than saving as PNG directly
+png(file=paste0(main_project_directory, "fig1.png"), width = 630, height = 800)
+print(fig1)
+dev.off()
 
 ##END OF SECTION 2
 
@@ -315,8 +400,27 @@ unique_pat_AFdistr_recurrent[head(match(sort(unique_pat_AFdistr_recurrent$mean),
 #Look at recurrent variants in the 6 patients with the lowest mean allelic fraction recurrent variants.
 gg_AF_data_extra_recurrent[which(gg_AF_data_extra_recurrent$PAT %in% unique_pat_AFdistr_recurrent[
   head(match(sort(unique_pat_AFdistr_recurrent$mean), (unique_pat_AFdistr_recurrent$mean)), 10),1][1:6]),]
-#SHEF-C7C6B has 4 recurrent variants, all of which are within the range of 0.49-0.59 mean AF - potentially suggesting a coinfection,
+#SHEF-C7C6B has 4 recurrent-in-nanopolish variants, all of which are within the range of 0.49-0.59 mean AF - potentially suggesting a coinfection,
 #if this is not a result of sequencing error
+
+#Get list of patients who have 2+ midAF (20-80%) variants recurrent across 1 or both variant callers
+gg_AF_data_extra_nanorec <- gg_AF_data_extra[which(gg_AF_data_extra$nano_hac3>0.25 & gg_AF_data_extra$nano_hac3<0.75 & gg_AF_data_extra$nano_hac4>0.25 & gg_AF_data_extra$nano_hac4<0.75 &
+                                             gg_AF_data_extra$nano_rle>0.25 & gg_AF_data_extra$nano_rle<0.75 & gg_AF_data_extra$nano_flipflop>0.25 & gg_AF_data_extra$nano_flipflop<0.75),]
+gg_AF_data_extra_medrec <- gg_AF_data_extra[which(gg_AF_data_extra$med_hac3>0.25 & gg_AF_data_extra$med_hac3<0.75 & gg_AF_data_extra$med_hac4>0.25 & gg_AF_data_extra$med_hac4<0.75 &
+                                             gg_AF_data_extra$med_rle>0.25 & gg_AF_data_extra$med_rle<0.75 & gg_AF_data_extra$med_flipflop>0.25 & gg_AF_data_extra$med_flipflop<0.75),]
+gg_AF_data_extra_eitherrec <- rbind(gg_AF_data_extra_medrec, gg_AF_data_extra_nanorec)
+gg_AF_data_extra_eitherrec <- gg_AF_data_extra_eitherrec[!duplicated(gg_AF_data_extra_eitherrec),]
+coinfection_patient_table <- sort(table(gg_AF_data_extra_eitherrec$PAT)[which(table(gg_AF_data_extra_eitherrec$PAT) > 1)], decreasing = TRUE)
+gg_AF_data_extra[which(gg_AF_data_extra$PAT==names(coinfection_patient_table)[1]),]
+
+#Get list of all variants at which a coinfection is called
+coinf_vars <- names(table(gg_AF_data_extra_eitherrec$VAR))
+kuipers_pub_vars <- c("T11075", "G11083T", "G24933T", "G15965GT", "G558T", "G3564T", "G1730*", "G10986T", "C6696T", "G28079T")
+kuipers_swiss_vars <- c("C3037T", "A23403G", "C13225", "G10265", "C27040", "T26465", "C19718", "G27033", "C25521T", "A26434")
+intersect(coinf_vars, kuipers_pub_vars) # "C6696T"  "G11083T" (2 out of 10)
+intersect(coinf_vars, kuipers_swiss_vars) # "A23403G" "C3037T" (2 out of 10)
+fisher.test(get_OR_table(coinf_vars, c(kuipers_swiss_vars, kuipers_pub_vars), FULLSET))
+#No significant enrichment (OR=2.65, p=0.09)
 
 ##END OF SECTION 5
 
@@ -428,16 +532,25 @@ for(i in 1:nrow(all_rows)){
 #Majority of variants are only called in medaka: Plot Venn diagram showing this
 
 venn.diagram(list(Medaka = which(all_rows$only_called_with %in% c("medaka", "bothVC")),
-                  Nanopolish = which(all_rows$only_called_with %in% c("nanopolish", "bothVC"))), fill = c("lightblue", "green"), 
+                  Nanopolish = which(all_rows$only_called_with %in% c("nanopolish", "bothVC"))), fill=c("#2EA9B0", "#EA5D4E"), 
              alpha = c(0.5, 0.5), lwd =0, paste0(main_project_directory, "vcaller_overlap_venn_diagram.tiff"),
-             main="Unique called variants", imagetype = 'tiff', margin=0.15, ext.text=FALSE,
-             main.pos=c(0.55, 0.95), height = 2000, width = 2000, cat.default.pos="outer")
+             main="Unique called variants", imagetype = 'tiff', margin=1.75, ext.text=FALSE,
+             main.pos=c(0.5, 0.57), height = 2000, width = 2000, cat.default.pos="outer", cat.just = list(c(0.6,0), c(0.6,0)),
+             main.fontfamily = "Arial", main.cex = 2, cat.fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
 
 venn.diagram(list(Medaka = which(all_rows$only_called_with %in% c("medaka", "bothVC")),
-                  Nanopolish = which(all_rows$only_called_with %in% c("nanopolish", "bothVC"))), fill = c("lightblue", "green"), 
+                  Nanopolish = which(all_rows$only_called_with %in% c("nanopolish", "bothVC"))), fill=c("#2EA9B0", "#EA5D4E"), 
              alpha = c(0.5, 0.5), lwd =0, paste0(main_project_directory, "vcaller_overlap_venn_diagram.png"),
-             main="Unique called variants", imagetype = 'png', margin=0.15, ext.text=FALSE,
-             main.pos=c(0.55, 0.95), height = 2000, width = 2000, cat.default.pos="outer")
+             main="Unique called variants", imagetype = 'png', margin=1.75, ext.text=FALSE,
+             main.pos=c(0.5, 0.57), height = 2000, width = 2000, cat.default.pos="outer", cat.just = list(c(0.6,0), c(0.6,0)),
+             main.fontfamily = "Arial", main.cex = 2, cat.fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
+
+venn.diagram(list(Medaka = which(all_rows$only_called_with %in% c("medaka", "bothVC")),
+                  Nanopolish = which(all_rows$only_called_with %in% c("nanopolish", "bothVC"))), fill=c("#2EA9B0", "#EA5D4E"), 
+             alpha = c(0.5, 0.5), lwd =0, paste0(main_project_directory, "vcaller_overlap_venn_diagram_notitle.png"),
+             imagetype = 'png', margin=0.05, ext.text=FALSE,
+             height = 2000, width = 2000, cat.default.pos="outer", cat.just = list(c(0.6,0), c(0.6,0)),
+             cat.fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
 
 all_rows <- all_rows[which(all_rows$only_called_with!="bothVC"),]
 all_rows <- all_rows[order(all_rows[,1]),]
@@ -461,7 +574,24 @@ for(i in 1:nrow(variants_never_called_from_all_4_BC_bothVC)){
   variants_never_called_from_all_4_BC_bothVC$NOT_CALLED_WITH[i] <- BCanno2
 }
 variants_never_called_from_all_4_BC_bothVC <- variants_never_called_from_all_4_BC_bothVC[order(variants_never_called_from_all_4_BC_bothVC[,1]),]
-write.table(x=variants_never_called_from_all_4_BC_bothVC, file = paste0(blacklist_directory,'variants_never_called_with_all_BC_bothVC.bed'), quote = FALSE, row.names = FALSE, sep = "\t")
+#Define function that splits all VAR lists into data frame with 3 columns (POS, REF, ALT)
+var2posrefalt <- function(vars){
+  nvars <- length(vars)
+  dftemp <- data.frame(POS=rep(NA,nvars), REF=rep(NA,nvars), ALT=rep(NA,nvars))
+  for(i in 1:nvars){
+    dftemp$REF[i] <- gsub("^(.+?)(?=\\d).*", "\\1", vars[i], perl = TRUE)
+    dftemp$POS[i] <- as.numeric(gsub("[^0-9.-]", "", vars[i]))
+    dftemp$ALT[i] <- gsub("[0-9.-]", "", gsub(".*^(.+?)(?=\\d)", "", vars[i], perl = TRUE))
+  }
+  return(dftemp)
+}
+#
+b4 <- gg_AF_data_extra[,c(2:5,6:9,11,12)]
+b4_disagree <- b4[which((!((b4$nano_hac3>0 & b4$nano_hac4>0 & b4$nano_rle>0 & b4$nano_flipflop>0) | (b4$nano_hac3==0 & b4$nano_hac4==0 & b4$nano_rle==0 & b4$nano_flipflop==0))) & 
+                          (!((b4$med_hac3>0 & b4$med_hac4>0 & b4$med_rle>0 & b4$med_flipflop>0) | (b4$med_hac3==0 & b4$med_hac4==0 & b4$med_rle==0 & b4$med_flipflop==0))) ),]
+variants_never_called_from_all_4_BC_bothVC2 <- var2posrefalt(unique(names(table(b4_disagree$VAR)[which(table(b4_disagree$VAR) %in% table(b4$VAR))])))
+#
+write.table(x=variants_never_called_from_all_4_BC_bothVC2, file = paste0(blacklist_directory,'variants_never_called_with_all_BC_bothVC.bed'), quote = FALSE, row.names = FALSE, sep = "\t")
 
 
 #Create BED file of variants that are never called across all 4 basecallers, with one variant caller
@@ -498,12 +628,26 @@ for(i in 1:nrow(variants_never_called_from_all_4_BC_oneVC)){
   variants_never_called_from_all_4_BC_oneVC$NEVER_CALLED_WITH[i] <- BCanno2p
 }
 #Remove variants that are never called and write to 2 separate, ordered BED files
+
+
+
 variants_never_called_from_all_4_BC_oneVC <- variants_never_called_from_all_4_BC_oneVC[which(variants_never_called_from_all_4_BC_oneVC$ONLY_CALLED_WITH!=''),]
 variants_never_called_from_all_4_BC_oneVC <- variants_never_called_from_all_4_BC_oneVC[order(variants_never_called_from_all_4_BC_oneVC[,1]),]
 variants_inconsistently_called_in_medaka <- variants_never_called_from_all_4_BC_oneVC[which(variants_never_called_from_all_4_BC_oneVC$inconsistently_called_with == 'medaka'),]
 variants_inconsistently_called_in_nanopolish <- variants_never_called_from_all_4_BC_oneVC[which(variants_never_called_from_all_4_BC_oneVC$inconsistently_called_with == 'nanopolish'),]
-write.table(x=variants_inconsistently_called_in_medaka[,c(1:4,6:7)], file = paste0(blacklist_directory,'inconsistently_called_in_medaka.bed'), quote = FALSE, row.names = FALSE, sep = "\t")
-write.table(x=variants_inconsistently_called_in_nanopolish[,c(1:4,6:7)], file = paste0(blacklist_directory,'inconsistently_called_in_nanopolish.bed'), quote = FALSE, row.names = FALSE, sep = "\t")
+
+#
+b4 <- gg_AF_data_extra[,c(2:5,6:9,11,12)]
+b4_disagree <- b4[which((!((b4$med_hac3>0 & b4$med_hac4>0 & b4$med_rle>0 & b4$med_flipflop>0) | (b4$med_hac3==0 & b4$med_hac4==0 & b4$med_rle==0 & b4$med_flipflop==0))) ),]
+variants_inconsistently_called_in_medaka2 <- var2posrefalt(unique(names(table(b4_disagree$VAR)[which(table(b4_disagree$VAR) %in% table(b4$VAR))])))
+#
+b4 <- gg_AF_data_extra[,c(2:5,6:9,11,12)]
+b4_disagree <- b4[which((!((b4$nano_hac3>0 & b4$nano_hac4>0 & b4$nano_rle>0 & b4$nano_flipflop>0) | (b4$nano_hac3==0 & b4$nano_hac4==0 & b4$nano_rle==0 & b4$nano_flipflop==0))) ),]
+variants_inconsistently_called_in_nanopolish2 <- var2posrefalt(unique(names(table(b4_disagree$VAR)[which(table(b4_disagree$VAR) %in% table(b4$VAR))])))
+#
+
+write.table(x=variants_inconsistently_called_in_medaka2, file = paste0(blacklist_directory,'inconsistently_called_in_medaka.bed'), quote = FALSE, row.names = FALSE, sep = "\t")
+write.table(x=variants_inconsistently_called_in_nanopolish2, file = paste0(blacklist_directory,'inconsistently_called_in_nanopolish.bed'), quote = FALSE, row.names = FALSE, sep = "\t")
 
 ##END OF SECTION 7
 
@@ -526,12 +670,15 @@ workflow1 <- DiagrammeR::grViz("digraph {
   rec6 [label = 'Get blacklist of variants \nwith systematic bias >5%', shape = folder, fillcolor = '#9BCBD0']
   rec7 [label = 'Get blacklist of non-DEL \nvariants with DEL AF >20%', shape = folder, fillcolor = '#9BCBD0']
   rec8 [label = 'Get blacklist of variants \nonly found in one variant caller', shape = folder, fillcolor = '#9BCBD0']
+  rec9 [label = 'Identify loci showing evidence of hypermutation', fillcolor = '#A1CAA6']
+  rec10 [label = 'Identify clustered medium AF\n variants with PyClone', fillcolor = '#A1CAA6']
+  
   # edge definitions with the node IDs
-  rec0 -> rec1 -> rec2a -> rec2b -> rec4
+  rec0 -> rec1 -> rec2a -> rec2b -> rec4 -> rec9
   rec3 -> rec4 -> rec6
   rec0 -> rec5
-  rec5 -> {rec6 rec7 rec8}
-  rec2a -> {rec7}
+  rec5 -> {rec6 rec7 rec8 rec10}
+  rec2a -> {rec7 rec9}
   }")
 
 
@@ -540,33 +687,6 @@ print(workflow1) %>%
 
 print(workflow1) %>% 
   export_svg %>% charToRaw %>% rsvg_png(paste0(main_project_directory, "workflow1.png"))
-
-#Part 2: Workflow for analysing co-infection possibility
-workflow2 <- DiagrammeR::grViz("digraph {
-  graph [layout = dot, rankdir = TB, fontsize=10]
-  node [shape = rectangle, style=filled]
-  rec0 [label = 'Sequence SARS-CoV-2 samples\n from 884 patients', fillcolor = '#FFE5B2']
-  rec1 [label = 'SARS-CoV-2 BAM files', fillcolor = '#FFE5B2', shape = folder]
-  rec2a [label = 'Get allelic fraction values\n for all samples at all loci', fillcolor = '#F29E95']
-  rec2b [label = 'Generate Incremental Database', fillcolor = '#F29E95']
-  rec3 [label =  'Generate Monte Carlo \nmodel for 884 samples', fillcolor = '#F29E95']
-  rec4 [label = 'Identify high SD variants', fillcolor = '#A1CAA6']
-  rec5 [label = 'SARS-CoV-2 VCF files', fillcolor = '#FFE5B2', shape = folder]
-  rec6 [label = 'Identify clustered low AF\n variants with PyClone', fillcolor = '#A1CAA6']
-  rec7 [label = 'Check variants are low AF across patient cohort', fillcolor = '#A1CAA6']
-  rec8 [label = 'Compare against putative \nco-infection variants in the literature', fillcolor = '#A1CAA6']
-  # edge definitions with the node IDs
-  rec0 -> rec1 -> rec2a -> rec2b -> rec4
-  rec3 -> rec4
-  rec0 -> rec5 -> {rec4 rec6}
-  {rec4 rec6} -> rec7 -> rec8
-  }")
-
-print(workflow2) %>% 
-  export_svg %>% charToRaw %>% rsvg_pdf(paste0(main_project_directory, "workflow2.pdf"))
-
-print(workflow2) %>% 
-  export_svg %>% charToRaw %>% rsvg_png(paste0(main_project_directory, "workflow2.png"))
 
 ##SECTION 9: Read in suspect loci and annotate suspect variants
 
@@ -606,6 +726,31 @@ for(allele in alleles){
   i <- 0
 }
 
+alleles <- c('A', 'C', 'G', 'T', 'DEL', 'INS')
+sus_comp_table <- data.frame(Alleles=alleles, HAC3=rep(NA, 6), HAC4=rep(NA, 6), RLE=rep(NA, 6), FLIPFLOP=rep(NA, 6))
+j <- 2
+for(allele in alleles){
+  for(bc in bc_list[c(2,3,4,1)]){
+    sus_file_temp <- read.table(paste0(folder_containing_suspect_loci_folders, allele, '/', allele, 'chr1_with_z_', bc, '.bed'))
+    sus_comp_table[which(alleles==allele), j] <- sum(sus_file_temp$V4>0.05)
+    j <- (j+1)
+  }
+  j <- 2
+}
+#Also makes %s version of sus_comp_table for Table 1 in manuscript
+sus_comp_table_percent <- sus_comp_table
+for(i in 2:5){
+  sus_comp_table_percent[,i] <- round(100*sus_comp_table[,i]/sum(sus_comp_table[,i]), digits = 1)
+}
+
+#Combine tables and save as Table 1
+table1 <- sus_comp_table
+for(i in 1:6){
+  for(j in 2:5){
+    table1[i,j] <- paste0(table1[i,j], ' (', sus_comp_table_percent[i,j], ')')
+  }
+}
+write.csv(x=table1, file = paste0(main_project_directory, 'Table_1.csv'), row.names = FALSE)
 
 ####
 #Get variant list and identify variants that occur at recurrent strong suspect loci
@@ -747,6 +892,48 @@ incdb_DEL_hac <- read.table(paste0(folder_containing_suspect_loci_folders, '/DEL
 
 #In addition, PyClone was used to establish that variants sometimes clustered together at similar intermediate AF values in patients such as
 #SHEF-C7C6B , which has 4 variants with AF 59-69%
+
+#Read in IGV plot figures and merge into single figure with ggarrange
+img1 <- readPNG(paste0(main_project_directory, "manual_figs/C8917T_SHEF-C6C7B_hac4.png"))
+img2 <- readPNG(paste0(main_project_directory, "manual_figs/G11083T_SHEF-D273F_hac4.png"))
+img3 <- readPNG(paste0(main_project_directory, "vcaller_overlap_venn_diagram_notitle.png"))
+
+igv1 = ggplot() + 
+  background_image(img1) +
+  # This ensures that the image leaves some space at the edges
+  theme(plot.margin = margin(t=0.5, l=2.4, r=0.2, b=0.5, unit = "cm"))
+igv2 = ggplot() + 
+  background_image(img2) +
+  # This ensures that the image leaves some space at the edges
+  theme(plot.margin = margin(t=0.5, l=2.4, r=0.2, b=0.5, unit = "cm"))
+venn1 = ggplot() + 
+  background_image(img3) +
+  # This ensures that the image leaves some space at the edges
+  theme(plot.margin = margin(t=0.7, l=0.4, r=0.2, b=0, unit = "cm"),plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+blank_gg = ggplot() + 
+  theme(plot.margin = margin(t=0.7, l=0.4, r=0.2, b=0, unit = "cm"),plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+
+fig2 <- ggarrange(ggarrange(plotlist = list(igv1, igv2), nrow=1, ncol=2,
+                            heights=c(1, 1), widths = c(1, 1), align = 'hv',
+                            labels = c('A', 'B'), label.y = c(1, 1, 1), font.label = list(size=56)), align = 'v',
+                  ggarrange(blank_gg, venn1, blank_gg, ncol=3, widths = c(1,2,1),
+                            labels = c('', 'C', ''), label.y = c(1,0.95,1), font.label = list(size=56)),
+                  nrow = 2, widths = c(1,1))
+
+#Save Figure 2 for manuscript
+pdf(file=paste0(main_project_directory, "fig2.pdf"), width = 22, height = 26)
+print(fig2)
+dev.off()
+
+png(file=paste0(main_project_directory, "fig2.png"), width = 1600, height = 1800)
+print(fig2)
+dev.off()
 
 ##END OF SECTION 11
 
@@ -1005,23 +1192,27 @@ DEL_hac4 <- read.table(paste0(blacklist_directory,'highDEL_called_variants_hac4.
 DEL_rle <- read.table(paste0(blacklist_directory,'highDEL_called_variants_rle.bed'), header = TRUE)
 #Merge blacklists that have high DEL anywhere and remove duplicates
 all_DEL_loci <- rbind(DEL_allbc[,1:3], DEL_flipflop[,1:3], DEL_hac3[,1:3], DEL_hac4[,1:3], DEL_rle[,1:3])
+
+#Filter out any rows of all_DEL_loci that are called as DEL variants
+all_DEL_loci <- (all_DEL_loci[which(nchar(all_DEL_loci$REF)<=nchar(all_DEL_loci$ALT)),])
+
 all_DEL_loci <- all_DEL_loci[order(all_DEL_loci[,1]),]
 all_DEL_loci <- all_DEL_loci[which(!duplicated(all_DEL_loci)),]
 #Annotate which BC each locus has a high DEL in
 all_DEL_loci$HIGH_DEL_BASECALLERS <- NA
 for(i in 1:nrow(all_DEL_loci)){
   temp_bc_list <- c()
-  if(rowglue(all_DEL_loci[i,1:3]) %in% rowglue(DEL_flipflop[,1:3])){temp_bc_list <- c(temp_bc_list, 'FLIPFLOP')}
-  if(rowglue(all_DEL_loci[i,1:3]) %in% rowglue(DEL_hac3[,1:3])){temp_bc_list <- c(temp_bc_list, 'HAC3')}
-  if(rowglue(all_DEL_loci[i,1:3]) %in% rowglue(DEL_hac4[,1:3])){temp_bc_list <- c(temp_bc_list, 'HAC4')}
-  if(rowglue(all_DEL_loci[i,1:3]) %in% rowglue(DEL_rle[,1:3])){temp_bc_list <- c(temp_bc_list, 'RLE')}
+  if(rowglue2(all_DEL_loci[i,1:3]) %in% rowglue2(DEL_flipflop[,1:3])){temp_bc_list <- c(temp_bc_list, 'FLIPFLOP')}
+  if(rowglue2(all_DEL_loci[i,1:3]) %in% rowglue2(DEL_hac3[,1:3])){temp_bc_list <- c(temp_bc_list, 'HAC3')}
+  if(rowglue2(all_DEL_loci[i,1:3]) %in% rowglue2(DEL_hac4[,1:3])){temp_bc_list <- c(temp_bc_list, 'HAC4')}
+  if(rowglue2(all_DEL_loci[i,1:3]) %in% rowglue2(DEL_rle[,1:3])){temp_bc_list <- c(temp_bc_list, 'RLE')}
   all_DEL_loci$HIGH_DEL_BASECALLERS[i] <- paste0(temp_bc_list, collapse = ';')
 }
 
 #Next we want to read in variants with systematic bias and merge with the above
 suspect_table <- read.table('suspect5_called_variants.bed', header = TRUE)
 suspect_table2 <- read.table('suspect5_called_variants_confirmed2SD.bed', header = TRUE)
-suspect_table_notin_DELtable <- suspect_table[which(!rowglue(suspect_table[,1:3]) %in% rowglue(all_DEL_loci[,1:3])), 1:3]
+suspect_table_notin_DELtable <- suspect_table[which(!rowglue2(suspect_table[,1:3]) %in% rowglue2(all_DEL_loci[,1:3])), 1:3]
 suspect_table_notin_DELtable$HIGH_DEL_BASECALLERS <- NA
 all_DEL_loci <- rbind(all_DEL_loci, suspect_table_notin_DELtable)
 all_DEL_loci <- all_DEL_loci[order(all_DEL_loci[,1]),]
@@ -1029,21 +1220,21 @@ all_DEL_loci$SYSTEMATIC_BIAS_OVER_5_PERCENT <- FALSE
 all_DEL_loci$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- TRUE
 for(i in 1:nrow(all_DEL_loci)){
   #Check if variant is in suspect_table and suspect_table2
-  if(rowglue(all_DEL_loci[i,1:3]) %in% rowglue(suspect_table[,1:3])){all_DEL_loci$SYSTEMATIC_BIAS_OVER_5_PERCENT[i] <- TRUE}
-  if(rowglue(all_DEL_loci[i,1:3]) %in% rowglue(suspect_table2[,1:3])){all_DEL_loci$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS[i] <- FALSE}
+  if(rowglue2(all_DEL_loci[i,1:3]) %in% rowglue2(suspect_table[,1:3])){all_DEL_loci$SYSTEMATIC_BIAS_OVER_5_PERCENT[i] <- TRUE}
+  if(rowglue2(all_DEL_loci[i,1:3]) %in% rowglue2(suspect_table2[,1:3])){all_DEL_loci$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS[i] <- FALSE}
 }
 
 #Next we want to check if variants are only called in a single variant caller
 only_medaka <- read.table('only_called_in_medaka.bed', header = TRUE)[,1:3]
-only_medaka_glued <- rowglue(only_medaka)
+only_medaka_glued <- rowglue2(only_medaka)
 only_nanopolish <- read.table('only_called_in_nanopolish.bed', header = TRUE)[,1:3]
-only_nanopolish_glued <- rowglue(only_nanopolish)
+only_nanopolish_glued <- rowglue2(only_nanopolish)
 both_VC <- intersect(only_medaka_glued, only_nanopolish_glued) #Sometimes variants are called in both VC, but separate individuals, so check this
 #None of the above variants are called in both VC across multiple individuals
 
 #Add rows to all_DEL_loci once more
-only_medaka_notin_DELtable <- only_medaka[which(!only_medaka_glued %in% rowglue(all_DEL_loci[,1:3])), 1:3]
-only_nanopolish_notin_DELtable <- only_nanopolish[which(!only_nanopolish_glued %in% rowglue(all_DEL_loci[,1:3])), 1:3]
+only_medaka_notin_DELtable <- only_medaka[which(!only_medaka_glued %in% rowglue2(all_DEL_loci[,1:3])), 1:3]
+only_nanopolish_notin_DELtable <- only_nanopolish[which(!only_nanopolish_glued %in% rowglue2(all_DEL_loci[,1:3])), 1:3]
 only_medaka_notin_DELtable$HIGH_DEL_BASECALLERS <- only_nanopolish_notin_DELtable$HIGH_DEL_BASECALLERS <- NA
 only_medaka_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- only_nanopolish_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- FALSE
 only_medaka_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- only_nanopolish_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- TRUE
@@ -1054,48 +1245,63 @@ all_DEL_loci <- all_DEL_loci[order(all_DEL_loci[,1]),]
 all_DEL_loci$ONLY_CALLED_WITH_ONE_VARIANT_CALLER <- FALSE
 for(i in 1:nrow(all_DEL_loci)){
   #Check if variant is in added tables
-  if(rowglue(all_DEL_loci[i,1:3]) %in% only_medaka_glued){all_DEL_loci$ONLY_CALLED_WITH_ONE_VARIANT_CALLER[i] <- 'MEDAKA'}
-  if(rowglue(all_DEL_loci[i,1:3]) %in% only_nanopolish_glued){all_DEL_loci$ONLY_CALLED_WITH_ONE_VARIANT_CALLER[i] <- 'NANOPOLISH'}
+  if(rowglue2(all_DEL_loci[i,1:3]) %in% only_medaka_glued){all_DEL_loci$ONLY_CALLED_WITH_ONE_VARIANT_CALLER[i] <- 'MEDAKA'}
+  if(rowglue2(all_DEL_loci[i,1:3]) %in% only_nanopolish_glued){all_DEL_loci$ONLY_CALLED_WITH_ONE_VARIANT_CALLER[i] <- 'NANOPOLISH'}
 }
 
 #Next we want to annotate whether basecallers agree on variant calls in medaka (NA for variants only called in nanopolish)
 #Likewise for nanopolish
-bc_disagree_medaka <- read.table('inconsistently_called_in_medaka.bed', header = TRUE, sep = '\t')
-bc_disagree_medaka_glued <- rowglue(bc_disagree_medaka[,1:3])
-bc_disagree_nanopolish <- read.table('inconsistently_called_in_nanopolish.bed', header = TRUE, sep = '\t')
-bc_disagree_nanopolish_glued <- rowglue(bc_disagree_nanopolish[,1:3])
 bc_disagree_bothvc <- read.table('variants_never_called_with_all_BC_bothVC.bed', header = TRUE)[,1:3]
-bc_disagree_bothvc_glued <- rowglue(bc_disagree_bothvc)
-intersect(bc_disagree_medaka_glued, bc_disagree_nanopolish_glued) #No variants in both bc_disagree sets, so can add both sets simultaneously
-bc_disagree_medaka_notin_DELtable <- bc_disagree_medaka[which(!bc_disagree_medaka_glued %in% rowglue(all_DEL_loci[,1:3])), 1:3]
-bc_disagree_nanopolish_notin_DELtable <- bc_disagree_nanopolish[which(!bc_disagree_nanopolish_glued %in% rowglue(all_DEL_loci[,1:3])), 1:3]
-bc_disagree_bothvc_notin_DELtable <- bc_disagree_bothvc[which(!bc_disagree_bothvc_glued %in% rowglue(all_DEL_loci[,1:3])), 1:3]
+bc_disagree_bothvc_glued <- rowglue2(bc_disagree_bothvc)
 
-bc_disagree_medaka_notin_DELtable$HIGH_DEL_BASECALLERS <- bc_disagree_nanopolish_notin_DELtable$HIGH_DEL_BASECALLERS <- bc_disagree_bothvc_notin_DELtable$HIGH_DEL_BASECALLERS <- NA
-bc_disagree_medaka_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- bc_disagree_nanopolish_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- bc_disagree_bothvc_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- FALSE
-bc_disagree_medaka_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- bc_disagree_nanopolish_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- bc_disagree_bothvc_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- TRUE
-bc_disagree_medaka_notin_DELtable$ONLY_CALLED_WITH_ONE_VARIANT_CALLER <- bc_disagree_nanopolish_notin_DELtable$ONLY_CALLED_WITH_ONE_VARIANT_CALLER <- bc_disagree_bothvc_notin_DELtable$ONLY_CALLED_WITH_ONE_VARIANT_CALLER <- FALSE
-all_DEL_loci <- rbind(all_DEL_loci, bc_disagree_medaka_notin_DELtable, bc_disagree_nanopolish_notin_DELtable, bc_disagree_bothvc_notin_DELtable)
+bc_disagree_medaka <- read.table('inconsistently_called_in_medaka.bed', header = TRUE, sep = '\t')
+bc_disagree_medaka_glued <- unique(c(rowglue2(bc_disagree_medaka[,1:3]), bc_disagree_bothvc_glued))
+bc_disagree_nanopolish <- read.table('inconsistently_called_in_nanopolish.bed', header = TRUE, sep = '\t')
+bc_disagree_nanopolish_glued <- unique(c(rowglue2(bc_disagree_nanopolish[,1:3]), bc_disagree_bothvc_glued))
+
+intersect(bc_disagree_medaka_glued, bc_disagree_nanopolish_glued) #Some variants in both bc_disagree sets, so cannot add both sets simultaneously
+
+#Start with medaka
+bc_disagree_medaka_notin_DELtable <- bc_disagree_medaka[which(!bc_disagree_medaka_glued %in% rowglue2(all_DEL_loci[,1:3])), 1:3]
+bc_disagree_medaka_notin_DELtable$HIGH_DEL_BASECALLERS <- NA
+bc_disagree_medaka_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- FALSE #bc_disagree_bothvc_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- FALSE
+bc_disagree_medaka_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- TRUE #bc_disagree_bothvc_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- TRUE
+bc_disagree_medaka_notin_DELtable$ONLY_CALLED_WITH_ONE_VARIANT_CALLER <- FALSE #bc_disagree_bothvc_notin_DELtable$ONLY_CALLED_WITH_ONE_VARIANT_CALLER <- FALSE
+all_DEL_loci <- rbind(all_DEL_loci, bc_disagree_medaka_notin_DELtable) #, bc_disagree_bothvc_notin_DELtable)
 all_DEL_loci <- all_DEL_loci[order(all_DEL_loci[,1]),]
-
 #For each row, annotate whether basecallers agree on variant calls in medaka and/or nanopolish (NA for variants only called in other vcaller)
 all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA <- TRUE
-all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH <- TRUE
-all_DEL_loci_glued <- rowglue(all_DEL_loci[,1:3])
+all_DEL_loci_glued <- rowglue2(all_DEL_loci[,1:3])
 for(i in 1:nrow(all_DEL_loci)){
   #Check if variant is in added tables
   if(all_DEL_loci_glued[i] %in% bc_disagree_medaka_glued){all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA[i] <- FALSE}
+  if(all_DEL_loci$ONLY_CALLED_WITH_ONE_VARIANT_CALLER[i] == 'NANOPOLISH'){all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA[i] <- NA}
+}
+#Repeat for nanopolish, but taking medaka column into account
+bc_disagree_nanopolish_notin_DELtable <- bc_disagree_nanopolish[which(!bc_disagree_nanopolish_glued %in% rowglue2(all_DEL_loci[,1:3])), 1:3]
+bc_disagree_nanopolish_notin_DELtable$HIGH_DEL_BASECALLERS <- NA
+bc_disagree_nanopolish_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- FALSE #bc_disagree_bothvc_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- FALSE
+bc_disagree_nanopolish_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- TRUE #bc_disagree_bothvc_notin_DELtable$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS <- TRUE
+bc_disagree_nanopolish_notin_DELtable$ONLY_CALLED_WITH_ONE_VARIANT_CALLER <- FALSE #bc_disagree_bothvc_notin_DELtable$ONLY_CALLED_WITH_ONE_VARIANT_CALLER <- FALSE
+bc_disagree_nanopolish_notin_DELtable$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA <- TRUE
+all_DEL_loci <- rbind(all_DEL_loci, bc_disagree_nanopolish_notin_DELtable) #, bc_disagree_bothvc_notin_DELtable)
+all_DEL_loci <- all_DEL_loci[order(all_DEL_loci[,1]),]
+#For each row, annotate whether basecallers agree on variant calls in medaka and/or nanopolish (NA for variants only called in other vcaller)
+all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH <- TRUE
+all_DEL_loci_glued <- rowglue2(all_DEL_loci[,1:3])
+for(i in 1:nrow(all_DEL_loci)){
+  #Check if variant is in added tables
   if(all_DEL_loci_glued[i] %in% bc_disagree_nanopolish_glued){all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH[i] <- FALSE}
-  if(all_DEL_loci_glued[i] %in% bc_disagree_bothvc_glued){all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH[i] <- all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA[i] <- FALSE}
   if(all_DEL_loci$ONLY_CALLED_WITH_ONE_VARIANT_CALLER[i] == 'NANOPOLISH'){all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA[i] <- NA}
   if(all_DEL_loci$ONLY_CALLED_WITH_ONE_VARIANT_CALLER[i] == 'MEDAKA'){all_DEL_loci$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH[i] <- NA}
 }
+#
 
 ###Next we want to annotate variants that were called despite having zero supportive reads - 0% AF not supported by soloDBs
-###0% AF originates from depth/ files in nanomed_884 directory
+###0% AF originates from depth/ files in incdb_directory
 ##zeroAF <- read.table('zeroAF_called_variants_allbc.bed', header = TRUE)[,1:3]
-##zeroAF_glued <- rowglue(zeroAF)
-##zeroAF_notin_DELtable <- zeroAF[which(!zeroAF_glued %in% rowglue(all_DEL_loci[,1:3])), 1:3]
+##zeroAF_glued <- rowglue2(zeroAF)
+##zeroAF_notin_DELtable <- zeroAF[which(!zeroAF_glued %in% rowglue2(all_DEL_loci[,1:3])), 1:3]
 ##
 ##zeroAF_notin_DELtable$HIGH_DEL_BASECALLERS <- NA
 ##zeroAF_notin_DELtable$SYSTEMATIC_BIAS_OVER_5_PERCENT <- FALSE
@@ -1111,7 +1317,7 @@ for(i in 1:nrow(all_DEL_loci)){
 ###Zero supporting reads seem to be caused by supporting reads being at very low coverage combined with mpileup not detecting SNV supporting reads within indels
 ###Since these are considered INS/DEL rather than ACGT
 ##all_DEL_loci$ZERO_SUPPORTING_READS <- FALSE
-##all_DEL_loci_glued <- rowglue(all_DEL_loci[,1:3])
+##all_DEL_loci_glued <- rowglue2(all_DEL_loci[,1:3])
 ##for(i in 1:nrow(all_DEL_loci)){
 ##  #Check if variant is in added tables
 ##  if(all_DEL_loci_glued[i] %in% zeroAF_glued){all_DEL_loci$ZERO_SUPPORTING_READS[i] <- TRUE}
@@ -1121,19 +1327,73 @@ for(i in 1:nrow(all_DEL_loci)){
 bull <- read.table(bull_et_al_blacklist_path, header = FALSE, as.is = TRUE)[,c(2,4)]
 bull$ALT <- '.' #No specific ALT being masked, so don't add to new list, just annotate columns of pre-existing blacklist variants
 #for(i in 1:nrow(bull)){bull$V3[i] <- cov_ref_vec[bull$V2[i]]}
-all_DEL_loci_glued2 <- rowglue(all_DEL_loci[,1:2])
+all_DEL_loci_glued2 <- rowglue2(all_DEL_loci[,1:2])
 all_DEL_loci$IN_DEVESON_BLACKLIST <- FALSE
-all_DEL_loci$IN_DEVESON_BLACKLIST[which(all_DEL_loci_glued2 %in% rowglue(bull[,1:2]))] <- TRUE
+all_DEL_loci$IN_DEVESON_BLACKLIST[which(all_DEL_loci_glued2 %in% rowglue2(bull[,1:2]))] <- TRUE
 
-demaio <- read.table(demaio_et_al_blacklist_path, as.is = TRUE, sep = '\t')[,c(2,4,7)]
-demaio_mask <- demaio[which(demaio$V7 == 'mask'),1:2]
-demaio_mask$ALT <- '.'
-demaio_caution <- demaio[which(demaio$V7 == 'caution'),1:2]
-demaio_caution$ALT <- '.'
+
+demaio <- read.table(demaio_et_al_blacklist_path, as.is = TRUE, sep = '\t')[,c(2,4,5,7)]
+#Where ALT allele is ., any variant at that position should be masked, so convert to A,C,G,T, excluding REF
+demaio_empty1 <- demaio[0,]
+for(i in 1:nrow(demaio)){
+  if(demaio$V5[i]=='.'){
+    standard <- c('A', 'C', 'G', 'T')
+    standard_ex <- standard[which(standard!=demaio$V4[i])]
+    for(j in 1:length(standard_ex)){
+      demaio_empty1 <- rbind(demaio_empty1, c(demaio[i,1:2], V5=standard_ex[j], V7=demaio[i,4]))
+    }
+  }else{
+    demaio_empty1 <- rbind(demaio_empty1, demaio[i,])
+  }
+}
+#Where ALT allele is multiple options, split row into multiple rows, one for each allele
+demaio_empty2 <- demaio_empty1[0,]
+for(i in 1:nrow(demaio_empty1)){
+  if(nchar(demaio_empty1$V5[i])>1){
+    alleles <- unlist(strsplit(demaio_empty1$V5[i], split=','))
+    for(j in 1:length(alleles)){
+      demaio_empty2 <- rbind(demaio_empty2, c(demaio_empty1[i,1:2], V5=alleles[j], V7=demaio_empty1[i,4]))
+    }
+  }else{
+    demaio_empty2 <- rbind(demaio_empty2, demaio_empty1[i,])
+  }
+}
+#Where ALT allele is non-standard, convert to options e.g. Y -> C,T
+key <- data.frame(input=rep(NA, 11), output=rep(NA, 11))
+key$input <- c('R', 'Y', 'K', 'M', 'S', 'W', 'B', 'D', 'H', 'V', 'N')
+key$output <- c('G,A', 'C,T', 'G,T', 'A,C', 'G,C', 'A,T', 'G,T,C', 'G,A,T', 'A,C,T', 'G,C,A', 'A,C,G,T')
+for(i in 1:nrow(demaio_empty2)){
+  if(demaio_empty2$V5[i] %in% key$input){
+    key_i <- which(key$input==demaio_empty2$V5[i])
+    demaio_empty2$V5[i] <- key$output[key_i]
+  }
+}
+#Since there are new multi-option rows, split these again into multiple rows
+demaio_empty3 <- demaio_empty2[0,]
+for(i in 1:nrow(demaio_empty2)){
+  if(nchar(demaio_empty2$V5[i])>1){
+    alleles <- unlist(strsplit(demaio_empty2$V5[i], split=','))
+    for(j in 1:length(alleles)){
+      demaio_empty3 <- rbind(demaio_empty3, c(demaio_empty2[i,1:2], V5=alleles[j], V7=demaio_empty2[i,4]))
+    }
+  }else{
+    demaio_empty3 <- rbind(demaio_empty3, demaio_empty2[i,])
+  }
+}
+#All rows should now be A,C,G,T only. Check this
+#unique(demaio_empty3$V5)
+#Remove duplicate rows and rows where ALT matches REF
+demaio <- demaio_empty3[which(!duplicated(demaio_empty3)),]
+demaio <- demaio[which(demaio$V4!=demaio$V5),]
+
+#Now we can match the De Maio variants against our list without duplicates or errors
+all_DEL_loci_glued3 <- rowglue2(all_DEL_loci[,c(1,3)])
+demaio_mask <- demaio[which(demaio$V7 == 'mask'),c(1,3)]
+demaio_caution <- demaio[which(demaio$V7 == 'caution'),c(1,3)]
 all_DEL_loci$IN_GOLDMAN_MASK_LIST <- FALSE
-all_DEL_loci$IN_GOLDMAN_MASK_LIST[which(all_DEL_loci_glued2 %in% rowglue(demaio_mask[,1:2]))] <- TRUE
+all_DEL_loci$IN_GOLDMAN_MASK_LIST[which(all_DEL_loci_glued3 %in% rowglue2(demaio_mask[,1:2]))] <- TRUE
 all_DEL_loci$IN_GOLDMAN_CAUTION_LIST <- FALSE
-all_DEL_loci$IN_GOLDMAN_CAUTION_LIST[which(all_DEL_loci_glued2 %in% rowglue(demaio_caution[,1:2]))] <- TRUE
+all_DEL_loci$IN_GOLDMAN_CAUTION_LIST[which(all_DEL_loci_glued3 %in% rowglue2(demaio_caution[,1:2]))] <- TRUE
 
 
 #Create final column giving recommendation to mask or take caution with variant
@@ -1175,6 +1435,86 @@ nanopolish_output_table <- output_table[which(output_table$ONLY_CALLED_WITH_ONE_
 write.table(medaka_output_table, file = 'Freeman_medaka_blacklist.xlsx', sep = '\t', quote = FALSE, row.names = FALSE)
 write.table(nanopolish_output_table, file = 'Freeman_nanopolish_blacklist.xlsx', sep = '\t', quote = FALSE, row.names = FALSE)
 
+#Get table of variant frequencies separated by blacklist and medaka/nanopolish
+blacklist_subset_numbers <- data.frame(Blacklist=c('SysBiasGt5%', 'VarAFnotGtSysBias', 'NonDEL20', 'VC1', 'BCnot4',
+                                                   'BCnot3noH3', 'BullMask', 'DeMaioMask', 'DeMaioCaution'),
+                                       Overall_no=rep(NA,9), Nanopolish_no=rep(NA,9), Medaka_no=rep(NA,9) )
+
+#Get overall values for table of numbers of variants with different blacklist features
+blacklist_subset_numbers$Overall_no[1] <- sum(output_table$SYSTEMATIC_BIAS_OVER_5_PERCENT)
+blacklist_subset_numbers$Overall_no[2] <- sum(!output_table$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS)
+blacklist_subset_numbers$Overall_no[3] <- sum(!is.na(output_table$HIGH_DEL_BASECALLERS))
+blacklist_subset_numbers$Overall_no[4] <- sum(output_table$ONLY_CALLED_WITH_ONE_VARIANT_CALLER!=FALSE)
+#blacklist_subset_numbers$Overall_no[5] <- length(which((!output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA) | (!output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH)))
+#
+#Number of unique variants where bc4 discrepancy occurs in ALL cases within gg_AF_data_extra where variant called (i.e. variant never called by all 4 bcs in any patients)
+b4 <- gg_AF_data_extra[,c(2:5,6:9,11,12)]
+b4a_disagree <- b4[which((!((b4$nano_hac3>0 & b4$nano_hac4>0 & b4$nano_rle>0 & b4$nano_flipflop>0) | (b4$nano_hac3==0 & b4$nano_hac4==0 & b4$nano_rle==0 & b4$nano_flipflop==0))) ),]
+b4a_names <- unique(names(table(b4a_disagree$VAR)[which(table(b4a_disagree$VAR) %in% table(b4$VAR))]))
+b4b_disagree <- b4[which((!((b4$med_hac3>0 & b4$med_hac4>0 & b4$med_rle>0 & b4$med_flipflop>0) | (b4$med_hac3==0 & b4$med_hac4==0 & b4$med_rle==0 & b4$med_flipflop==0))) ),]
+b4b_names <- unique(names(table(b4b_disagree$VAR)[which(table(b4b_disagree$VAR) %in% table(b4$VAR))]))
+b4c_names <- union(b4a_names, b4b_names)
+blacklist_subset_numbers$Overall_no[5] <- length(b4c_names)
+#
+b3 <- gg_AF_data_extra[,c(3:5,7:9,11,12)]
+b3a_disagree <- b3[which((!((b3$nano_hac4>0 & b3$nano_rle>0 & b3$nano_flipflop>0) | (b3$nano_hac4==0 & b3$nano_rle==0 & b3$nano_flipflop==0))) ),]
+b3a_names <- unique(names(table(b3a_disagree$VAR)[which(table(b3a_disagree$VAR) %in% table(b3$VAR))]))
+b3b_disagree <- b3[which((!((b3$med_hac4>0 & b3$med_rle>0 & b3$med_flipflop>0) | (b3$med_hac4==0 & b3$med_rle==0 & b3$med_flipflop==0))) ),]
+b3b_names <- unique(names(table(b3b_disagree$VAR)[which(table(b3b_disagree$VAR) %in% table(b3$VAR))]))
+b3c_names <- union(b3a_names, b3b_names)
+blacklist_subset_numbers$Overall_no[6] <- length(b3c_names)
+#
+blacklist_subset_numbers$Overall_no[7] <- sum(output_table$IN_DEVESON_BLACKLIST)
+blacklist_subset_numbers$Overall_no[8] <- sum(output_table$IN_GOLDMAN_MASK_LIST)
+blacklist_subset_numbers$Overall_no[9] <- sum(output_table$IN_GOLDMAN_CAUTION_LIST)
+
+#Get nanopolish values for table of numbers of variants with different blacklist features
+blacklist_subset_numbers$Nanopolish_no[1] <- sum(nanopolish_output_table$SYSTEMATIC_BIAS_OVER_5_PERCENT)
+blacklist_subset_numbers$Nanopolish_no[2] <- sum(!nanopolish_output_table$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS)
+blacklist_subset_numbers$Nanopolish_no[3] <- sum(!is.na(nanopolish_output_table$HIGH_DEL_BASECALLERS))
+blacklist_subset_numbers$Nanopolish_no[4] <- sum(nanopolish_output_table$ONLY_CALLED_WITH_ONE_VARIANT_CALLER!=FALSE)
+#blacklist_subset_numbers$Nanopolish_no[5] <- length(which(!nanopolish_output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH))
+#
+b4 <- gg_AF_data_extra[,c(2:5,6:9,11,12)]
+b4_disagree <- b4[which((!((b4$nano_hac3>0 & b4$nano_hac4>0 & b4$nano_rle>0 & b4$nano_flipflop>0) | (b4$nano_hac3==0 & b4$nano_hac4==0 & b4$nano_rle==0 & b4$nano_flipflop==0))) ),]
+blacklist_subset_numbers$Nanopolish_no[5] <- length(unique(names(table(b4_disagree$VAR)[which(table(b4_disagree$VAR) %in% table(b4$VAR))])))
+#
+b3 <- gg_AF_data_extra[,c(3:5,7:9,11,12)]
+b3_disagree <- b3[which((!((b3$nano_hac4>0 & b3$nano_rle>0 & b3$nano_flipflop>0) | (b3$nano_hac4==0 & b3$nano_rle==0 & b3$nano_flipflop==0)))),]
+blacklist_subset_numbers$Nanopolish_no[6] <- length(unique(names(table(b3_disagree$VAR)[which(table(b3_disagree$VAR) %in% table(b3$VAR))])))
+#
+blacklist_subset_numbers$Nanopolish_no[7] <- sum(nanopolish_output_table$IN_DEVESON_BLACKLIST)
+blacklist_subset_numbers$Nanopolish_no[8] <- sum(nanopolish_output_table$IN_GOLDMAN_MASK_LIST)
+blacklist_subset_numbers$Nanopolish_no[9] <- sum(nanopolish_output_table$IN_GOLDMAN_CAUTION_LIST)
+
+#Get medaka values for table of numbers of variants with different blacklist features
+blacklist_subset_numbers$Medaka_no[1] <- sum(medaka_output_table$SYSTEMATIC_BIAS_OVER_5_PERCENT)
+blacklist_subset_numbers$Medaka_no[2] <- sum(!medaka_output_table$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS)
+blacklist_subset_numbers$Medaka_no[3] <- sum(!is.na(medaka_output_table$HIGH_DEL_BASECALLERS))
+blacklist_subset_numbers$Medaka_no[4] <- sum(medaka_output_table$ONLY_CALLED_WITH_ONE_VARIANT_CALLER!=FALSE)
+#blacklist_subset_numbers$Medaka_no[5] <- length(which(!medaka_output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA))
+#
+b4 <- gg_AF_data_extra[,c(2:5,6:9,11,12)]
+b4_disagree <- b4[which((!((b4$med_hac3>0 & b4$med_hac4>0 & b4$med_rle>0 & b4$med_flipflop>0) | (b4$med_hac3==0 & b4$med_hac4==0 & b4$med_rle==0 & b4$med_flipflop==0))) ),]
+blacklist_subset_numbers$Medaka_no[5] <- length(unique(names(table(b4_disagree$VAR)[which(table(b4_disagree$VAR) %in% table(b4$VAR))])))
+#
+b3 <- gg_AF_data_extra[,c(3:5,7:9,11,12)]
+b3_disagree <- b3[which((!((b3$med_hac4>0 & b3$med_rle>0 & b3$med_flipflop>0) | (b3$med_hac4==0 & b3$med_rle==0 & b3$med_flipflop==0)))),]
+blacklist_subset_numbers$Medaka_no[6] <- length(unique(names(table(b3_disagree$VAR)[which(table(b3_disagree$VAR) %in% table(b3$VAR))])))
+#
+blacklist_subset_numbers$Medaka_no[7] <- sum(medaka_output_table$IN_DEVESON_BLACKLIST)
+blacklist_subset_numbers$Medaka_no[8] <- sum(medaka_output_table$IN_GOLDMAN_MASK_LIST)
+blacklist_subset_numbers$Medaka_no[9] <- sum(medaka_output_table$IN_GOLDMAN_CAUTION_LIST)
+
+#Save table as Table 2
+write.table(blacklist_subset_numbers, file ='Table_2.xlsx', sep = '\t', quote = FALSE, row.names = FALSE )
+table_2 <- blacklist_subset_numbers
+table_2$Blacklist <- c("Systematic bias > 5% AF", "VAF not higher than systematic bias", "NonDEL20",
+                       "Only called with one variant caller", "Variant call not consistent across different basecallers",
+                       "Variant call not consistent across different basecallers (excluding HAC3)",
+                       "In Bull et al. blacklist (mask)", "In De Maio et al. blacklist (mask)", "In De Maio et al. blacklist (caution)")
+colnames(table_2) <- c("Blacklist feature", "Overall", "Nanopolish", "Medaka")
+write.table(x=table_2, file = paste0(main_project_directory, "Table_2.csv"), sep = ',', quote = FALSE, row.names = FALSE )
 
 ##END OF SECTION 16
 
@@ -1196,6 +1536,11 @@ ggplot() +
   geom_histogram(data = output_table, mapping = aes(x = POS), bins = 100, color=purple, fill=purple) +
   ylab("Number of blacklist variants") + xlab("Genomic position")
 
+#Get coordinates of 5 main peaks
+histdata <- hist(output_table$POS, plot = FALSE, breaks = seq(from=0, to = 30000, length.out = 100))
+histdata$breaks[which(histdata$counts>25)]
+#4240-4850, 5150-5760, 10000-10610, 17880-18480, 22730-23330
+
 #Generate similar plots for high DEL variants, variants with systematic bias, and variants that are not consistently called
 ggplot() +
   geom_histogram(data = output_table[which(!is.na(output_table$HIGH_DEL_BASECALLERS)),], mapping = aes(x = POS), bins = 100, color=purple, fill=purple) +
@@ -1216,8 +1561,8 @@ ggplot() +
 #Variant caller discrepances, basecaller discrepancies both correlate strongly with each other and with high DEL fraction variants
 #Systematic bias has less clear correlation with these. Test this with fisher test:
 genome_length <- length(cov_ref_vec)
-set1 <- rowglue(suspect_table[, 1:3])
-set2 <- rowglue(all_DEL_loci[which(!is.na(all_DEL_loci$HIGH_DEL_BASECALLERS)), 1:3])
+set1 <- rowglue2(suspect_table[, 1:3])
+set2 <- rowglue2(all_DEL_loci[which(!is.na(all_DEL_loci$HIGH_DEL_BASECALLERS)), 1:3])
 
 a <- length(intersect(set1, set2)) #In suspect loci & high DEL variants
 b <- length(setdiff(set1, set2)) #In suspect loci, not high DEL variants
@@ -1225,27 +1570,10 @@ c <- length(setdiff(set2, set1)) #In high DEL variants, not suspect loci
 d <- (genome_length - (a+b+c)) #Not in either
 
 f.table <- matrix(c(a,b,c,d), nrow = 2, dimnames = list(c("In high DEL variants", "Not in high DEL variants"),c("In suspect loci", "Not in suspect loci")))
-fisher.test(f.table) #Variants with systematic bias are 12X enriched in the set of high DEL variants, with a significant p value of 0.0137
+fisher.test(f.table) #Variants with systematic bias are significantly enriched (OR=24.7x, p=0.04234) in the set of high DEL variants
 
 #Therefore systematic bias variants, high DEL AF variants, and variants with basecaller and variant caller discrepancies are all correlated with each other
 #Variants that are unreliable have an increased rate of all of these features, and they are not independent of each other.
-
-#Get values for table of numbers of variants with different blacklist features
-sum(output_table$SYSTEMATIC_BIAS_OVER_5_PERCENT)
-sum(!output_table$VARIANT_AF_HIGHER_THAN_SYSTEMATIC_BIAS)
-sum(!is.na(output_table$HIGH_DEL_BASECALLERS))
-sum(output_table$ONLY_CALLED_WITH_ONE_VARIANT_CALLER!=FALSE)
-length(which((!output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA) | (!output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH)))
-#
-b3 <- gg_AF_data_extra[,c(3:5,7:9,11,12)]
-b3_disagree <- b3[which((!((b3$nano_hac4>0 & b3$nano_rle>0 & b3$nano_flipflop>0) | (b3$nano_hac4==0 & b3$nano_rle==0 & b3$nano_flipflop==0))) | 
-                          (!((b3$med_hac4>0 & b3$med_rle>0 & b3$med_flipflop>0) | (b3$med_hac4==0 & b3$med_rle==0 & b3$med_flipflop==0))) ),]
-length(unique(b3_disagree$VAR))
-#
-##sum(output_table$ZERO_SUPPORTING_READS)
-sum(output_table$IN_DEVESON_BLACKLIST)
-sum(output_table$IN_GOLDMAN_MASK_LIST)
-sum(output_table$IN_GOLDMAN_CAUTION_LIST)
 
 #Read in homopolymer and primer positions
 artic_primers <- read.table(artic_primers_path)
@@ -1258,7 +1586,7 @@ while(i <(length(cov_ref_vec)-4)){
     #Position is start of homopolymer, find homopolymer end and generate entry for homopolymer
     j <- (i+4)
     while(cov_ref_vec[i]==cov_ref_vec[j]){j <- (j+1)}
-    j <- (j+1) #Return j to last index at which base still matched original base, this is the last position of the homopolymer (1-based)
+    j <- (j-1) #Return j to last index at which base still matched original base, this is the last position of the homopolymer (1-based)
     homopolymer_bed <- rbind(homopolymer_bed, c(base, i, j, (j-i+1)))
     i <- (j+1) #Update i value to look for next homopolymer
   }else{
@@ -1285,18 +1613,27 @@ ymid <- (ymin1+ymax1)/2
 legend_plot <- ggplot() + ft_theme()+
   #geom_density(data=binned_data, mapping = aes(x=POS, y=BASECALLERDISPERPAT, fill=green), col=NA, stat = 'identity') +
   geom_rect(data = output_table[which(output_table$SYSTEMATIC_BIAS_OVER_5_PERCENT), ], mapping = aes(xmin=POS-half_width, xmax=POS+half_width, ymin=(ymin1-0.1), ymax=(ymax1-0.1), fill="Systematic bias > 5%")) +
+  annotate("text", x=-2000, y=(ymin1-0.15), label= "Systematic bias > 5%", fontface =2) +
   geom_rect(data = output_table[which(!is.na(output_table$HIGH_DEL_BASECALLERS)), ], mapping = aes(xmin=POS-half_width, xmax=POS+half_width, ymin=(ymin1-0.2), ymax=(ymax1-0.2), fill="DEL AF >20%")) +
+  annotate("text", x=-2000, y=(ymin1-0.25), label= "DEL AF >20%", fontface =2) +
   geom_rect(data = output_table[which(output_table$ONLY_CALLED_WITH_ONE_VARIANT_CALLER!=FALSE), ], mapping = aes(xmin=POS-half_width, xmax=POS+half_width, ymin=(ymin1-0.3), ymax=(ymax1-0.3), fill="One VC only")) +
+  annotate("text", x=-2000, y=(ymin1-0.35), label= "One VC only", fontface =2) +
   ##geom_rect(data = output_table[which(output_table$ZERO_SUPPORTING_READS), ], mapping = aes(xmin=POS-half_width, xmax=POS+half_width, ymin=(ymin1-0.4), ymax=(ymax1-0.4), fill="0% AF")) +
   geom_rect(data = output_table[which(output_table$IN_DEVESON_BLACKLIST), ], mapping = aes(xmin=POS-half_width, xmax=POS+half_width, ymin=(ymin1-0.4), ymax=(ymax1-0.4), fill="Bull")) +
+  annotate("text", x=-2000, y=(ymin1-0.45), label= "Bull et al.", fontface =2) +
   geom_rect(data = output_table[which(output_table$IN_GOLDMAN_MASK_LIST | output_table$IN_GOLDMAN_CAUTION_LIST), ], mapping = aes(xmin=POS-half_width, xmax=POS+half_width, ymin=(ymin1-0.5), ymax=(ymax1-0.5), fill="De Maio")) +
+  annotate("text", x=-2000, y=(ymin1-0.55), label= "De Maio et al.", fontface =2) +
   scale_fill_manual(values = c("black", "dark red", aqua, yellow, green), name="Blacklist subset:",
                     labels=c("Bull et al.", "DEL AF >20%", "De Maio et al.", "One VC only", "Systematic bias > 5%")) +
                     guides(fill=guide_legend(nrow=2), byrow=TRUE) +
-  geom_rect(data = artic_primers, mapping = aes(xmin=V2, xmax=V3, ymin=(ymin1-0.7), ymax=(ymax1-0.7), colour='Artic_primers')) +
-  geom_rect(data = homopolymer_bed, mapping = aes(xmin=START, xmax=STOP, ymin=(ymin1-0.8), ymax=(ymax1-0.8), colour='Homopolymers')) +
-  geom_rect(data = japan_qPCR_bed, mapping = aes(xmin=V2, xmax=V3, ymin=(ymin1-0.9), ymax=(ymax1-0.9), colour='Japan qPCR primers')) +
-  geom_rect(data = wuhan_qPCR_bed, mapping = aes(xmin=V2, xmax=V3, ymin=(ymin1-1.0), ymax=(ymax1-1.0), colour='Wuhan qPCR primers')) +
+  geom_rect(data = artic_primers, mapping = aes(xmin=V2, xmax=V3, ymin=(ymin1-0.6), ymax=(ymax1-0.6), colour='Artic_primers')) +
+  annotate("text", x=-2000, y=(ymin1-0.65), label= "Artic primers", fontface =2) +
+  geom_rect(data = homopolymer_bed, mapping = aes(xmin=START, xmax=STOP, ymin=(ymin1-0.7), ymax=(ymax1-0.7), colour='Homopolymers')) +
+  annotate("text", x=-2000, y=(ymin1-0.75), label= "Homopolymers", fontface =2) +
+  geom_rect(data = japan_qPCR_bed, mapping = aes(xmin=V2, xmax=V3, ymin=(ymin1-0.8), ymax=(ymax1-0.8), colour='Japan qPCR primers')) +
+  annotate("text", x=-2000, y=(ymin1-0.85), label= "Japan qPCR primers", fontface =2) +
+  geom_rect(data = wuhan_qPCR_bed, mapping = aes(xmin=V2, xmax=V3, ymin=(ymin1-0.9), ymax=(ymax1-0.9), colour='Wuhan qPCR primers')) +
+  annotate("text", x=-2000.0, y=(ymin1-0.95), label= "Wuhan qPCR primers", fontface =2) +
   scale_color_manual(values = c(coral, navy, orange, purple), name="Annotation:",
                      labels=c("Artic primers","Homopolymers","Japan qPCR primers","Wuhan qPCR primers"))+
   guides(color = guide_legend(override.aes = list(fill = c(coral, navy, orange, purple)), nrow = 2)) +
@@ -1326,7 +1663,42 @@ legend_plot <- ggplot() + ft_theme()+
         axis.title.x=element_blank(),
         axis.title.y=element_blank(),#legend.position="none",
         panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank()) + xlab(label = NULL) + coord_cartesian(xlim=c(1000, 29000))
+        panel.grid.minor=element_blank()) + xlab(label = NULL) + coord_cartesian(xlim=c(1000, 29000), clip = 'off')
+
+output_table_spike <- output_table[which(output_table$POS %in% 21532:25360),]
+
+
+small_half_width <- 10
+legend_plot_high_def <- ggplot() + ft_theme()+
+  geom_rect(data = output_table_spike[which(output_table_spike$SYSTEMATIC_BIAS_OVER_5_PERCENT), ], mapping = aes(xmin=POS-small_half_width, xmax=POS+small_half_width, ymin=(ymin1-0.1), ymax=(ymax1-0.1), fill="Systematic bias > 5%")) +
+  annotate("text", x=21532-200, y=(ymin1-0.15), label= "Systematic bias > 5%", fontface =2) +
+  geom_rect(data = output_table_spike[which(!is.na(output_table_spike$HIGH_DEL_BASECALLERS)), ], mapping = aes(xmin=POS-small_half_width, xmax=POS+small_half_width, ymin=(ymin1-0.2), ymax=(ymax1-0.2), fill="DEL AF >20%")) +
+  annotate("text", x=21532-200, y=(ymin1-0.25), label= "DEL AF >20%", fontface =2) +
+  geom_rect(data = output_table_spike[which(output_table_spike$ONLY_CALLED_WITH_ONE_VARIANT_CALLER!=FALSE), ], mapping = aes(xmin=POS-small_half_width, xmax=POS+small_half_width, ymin=(ymin1-0.3), ymax=(ymax1-0.3), fill="One VC only")) +
+  annotate("text", x=21532-200, y=(ymin1-0.35), label= "One VC only", fontface =2) +
+  geom_rect(data = output_table_spike[which(output_table_spike$IN_DEVESON_BLACKLIST), ], mapping = aes(xmin=POS-small_half_width, xmax=POS+small_half_width, ymin=(ymin1-0.4), ymax=(ymax1-0.4), fill="Bull")) +
+  annotate("text", x=21532-200, y=(ymin1-0.45), label= "Bull et al.", fontface =2) +
+  geom_rect(data = output_table_spike[which(output_table_spike$IN_GOLDMAN_MASK_LIST | output_table_spike$IN_GOLDMAN_CAUTION_LIST), ], mapping = aes(xmin=POS-small_half_width, xmax=POS+small_half_width, ymin=(ymin1-0.5), ymax=(ymax1-0.5), fill="De Maio")) +
+  annotate("text", x=21532-200, y=(ymin1-0.55), label= "De Maio et al.", fontface =2) +
+  scale_fill_manual(values = c("black", "dark red", aqua, yellow, green, coral), name="Blacklist subset:",
+                    labels=c("Bull et al.", "DEL AF >20%", "De Maio et al.", "One VC only", "Systematic bias > 5%", "ZArtic_primers")) +
+  guides(fill=guide_legend(nrow=2), byrow=TRUE) +
+  geom_rect(data = artic_primers[which(artic_primers$V3 > 21532 & artic_primers$V2 < 25360),], mapping = aes(xmin=V2, xmax=V3, ymin=(ymin1-0.6), ymax=(ymax1-0.6), colour='Artic_primers', fill='ZArtic_primers')) +
+  annotate("text", x=21532-200, y=(ymin1-0.65), label= "Artic primers", fontface =2) +
+  geom_rect(data = homopolymer_bed[which(homopolymer_bed$STOP > 21532 & homopolymer_bed$START < 25360),], mapping = aes(xmin=START, xmax=STOP, ymin=(ymin1-0.7), ymax=(ymax1-0.7), colour='Homopolymers')) +
+  annotate("text", x=21532-200, y=(ymin1-0.75), label= "Homopolymers", fontface =2) +
+  scale_color_manual(values = c(coral, navy, orange, purple), name="Annotation:",
+                     labels=c("Artic primers","Homopolymers","Japan qPCR primers","Wuhan qPCR primers"))+
+  guides(color = guide_legend(override.aes = list(fill = c(coral, navy, orange, purple)), nrow = 2)) +
+  annotate(geom="rect",xmin=21532,xmax=25360,ymin=ymin1,ymax=ymax1,color=navy,fill=navy)+
+  annotate(geom="text",x=23500,y=ymid,color="white",label="S",fontface='bold')+
+  annotate(geom="rect",xmin=21532,xmax=25360,ymin=ymin1,ymax=ymax1,fill="white",alpha=0.3) +
+  theme(axis.line=element_blank(),axis.text.x=element_blank(),
+        axis.text.y=element_blank(),axis.ticks=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),#legend.position="none",
+        panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank()) + xlab(label = NULL) + coord_cartesian(xlim=c(1000, 29000), clip = 'off')
 
 disc_plot_legend <- get_legend(legend_plot)
 disc_plot_nolegend <- legend_plot + theme(axis.line=element_blank(),axis.text.x=element_blank(),
@@ -1335,7 +1707,15 @@ disc_plot_nolegend <- legend_plot + theme(axis.line=element_blank(),axis.text.x=
                                           axis.title.y=element_blank(),legend.position="none",
                                           panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
                                           panel.grid.minor=element_blank(), panel.spacing.y = unit(0,"null")) + xlab(label = NULL) +
-  coord_cartesian(xlim=c(0, 30000), ylim = c(0.4,1.5), expand = FALSE)
+  coord_cartesian(xlim=c(0, 30000), ylim = c(0.4,1.5), expand = FALSE, clip = 'off')
+
+disc_plot_nolegend_spike <- legend_plot_high_def + theme(axis.line=element_blank(),axis.text.x=element_blank(),
+                                          axis.text.y=element_blank(),axis.ticks=element_blank(),
+                                          axis.title.x=element_blank(),
+                                          axis.title.y=element_blank(),legend.position="none",
+                                          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+                                          panel.grid.minor=element_blank(), panel.spacing.y = unit(0,"null")) + xlab(label = NULL) +
+  coord_cartesian(xlim=c(21532, 25360), ylim = c(0.6,1.5), expand = FALSE, clip = 'off')
 
 #Get basecaller discrepancies density for bottom of plot
 output_table_bdisc <- output_table[which((!output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA) | (!output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH)), ]
@@ -1348,7 +1728,7 @@ ggplot() +
 ggplot() + 
   geom_histogram(data=variants_ordered, mapping = aes(x=POS), binwidth = 200)
 
-non_bdisc_variants <- variants_ordered[which(!(rowglue(variants_ordered[,1:3]) %in% rowglue(output_table_bdisc[,1:3]))),]
+non_bdisc_variants <- variants_ordered[which(!(rowglue2(variants_ordered[,1:3]) %in% rowglue2(output_table_bdisc[,1:3]))),]
 ggplot() + 
   geom_histogram(data=non_bdisc_variants, mapping = aes(x=POS), binwidth = 200)
 
@@ -1357,7 +1737,7 @@ ggplot() +
 #non-blacklisted variants, which show a much higher proportion of variants at non-peak positions.
 
 nrow(output_table_bdisc)/(nrow(non_bdisc_variants) + nrow(output_table_bdisc))
-#70.01% of all unique variants have at least one basecaller discrepancy, so unsurprisingly, the majority of variants found were
+#^% of all unique variants have at least one basecaller discrepancy, so unsurprisingly, the majority of variants found were
 #in the blacklist. We recommend "caution" with these rather than outright masking, since many of these are likely real variants.
 
 b_disc_plot <- ggplot() + #ft_theme()+
@@ -1366,7 +1746,7 @@ b_disc_plot <- ggplot() + #ft_theme()+
   theme(legend.position = "none", axis.line=element_blank(),
         panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
         panel.grid.minor=element_blank(),axis.text.x=element_blank(),axis.title.x=element_blank()) +
-  xlab("") + ylab("Number of variants with\n basecaller discrepancies") + coord_cartesian(xlim=c(1000, 29000))
+  xlab("") + ylab("Number of variants with\n basecaller discrepancies") + coord_cartesian(xlim=c(1000, 29000), clip = 'off')
 
 #ggarrange(legend_plot, b_disc_plot, nrow=2, heights=c(1, 0.4), align = 'hv', labels = c('A', 'B'), label.y = c(1, 1.1))
 
@@ -1375,7 +1755,7 @@ b_disc_plot2 <- ggplot() + #ft_theme()+
   theme(legend.position = "none", axis.line=element_blank(),
         panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
         panel.grid.minor=element_blank()) +
-  xlab("Locus") + ylab("Number of variants without\n basecaller discrepancies") + coord_cartesian(xlim=c(1000, 29000))
+  xlab("Locus") + ylab("Number of variants without\n basecaller discrepancies") + coord_cartesian(xlim=c(1000, 29000), clip = 'off')
 
 #ggarrange(legend_plot, b_disc_plot, b_disc_plot2, nrow=3, heights=c(1, 0.4, 0.4), align = 'hv', labels = c('A', 'B', 'C'), label.y = c(1, 1.1, 1.1))
 
@@ -1406,28 +1786,67 @@ b_disc_props <- ggplot(ggtemp, aes(x = xv, y = yv)) + geom_bar(stat='identity', 
   theme(legend.position = "none", axis.line=element_blank(),
         panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
         panel.grid.minor=element_blank()) +
-  xlab("Locus") + ylab("Proportion of variants with\n basecaller discrepancies") + coord_cartesian(xlim=c(1000, 29000), ylim = c(0,1))
+  xlab("Locus") + ylab("Proportion of variants with\n basecaller discrepancies") + coord_cartesian(xlim=c(1000, 29000), ylim = c(0,1), clip = 'off')
 
 b_disc_props_noxaxis <- ggplot(ggtemp, aes(x = xv, y = yv)) + geom_bar(stat='identity', width = bin_width)+
   theme(legend.position = "none", axis.line=element_blank(),
         panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
         panel.grid.minor=element_blank(),axis.text.x=element_blank(), axis.ticks.x=element_blank(),
         panel.spacing.y = unit(0,"null"), plot.margin=unit(c(5.5,5.5,-1,5.5), "points")) + xlab(NULL) +
-  ylab("Proportion of variants with\n basecaller discrepancies") + coord_cartesian(xlim=c(0, 30000), ylim = c(0,1), expand = FALSE, )
+  ylab("Proportion of variants with\n basecaller discrepancies") + coord_cartesian(xlim=c(0, 30000), ylim = c(0,1), expand = FALSE, clip = 'off') + 
+  annotate("segment", x = 4545, xend = 4545, y = 1, yend = 0.95, colour = "red", size=2, alpha=1, arrow=arrow()) + 
+  annotate("segment", x = 5454, xend = 5454, y = 1, yend = 0.95, colour = "red", size=2, alpha=1, arrow=arrow()) +
+  annotate("segment", x = 10303, xend = 10303, y = 1, yend = 0.95, colour = "red", size=2, alpha=1, arrow=arrow()) +
+  annotate("segment", x = 18181, xend = 18181, y = 1, yend = 0.95, colour = "red", size=2, alpha=1, arrow=arrow()) +
+  annotate("segment", x = 23030, xend = 23030, y = 1, yend = 0.95, colour = "red", size=2, alpha=1, arrow=arrow())
+
+heights_disc_spike <- get_histogram_heights(output_table_bdisc, poscol='POS', bin_width/5)
+heights_nodisc_spike <- get_histogram_heights(non_bdisc_variants, poscol='POS', bin_width/5)
+heights_disc_frac_spike <- heights_disc_spike/(heights_disc_spike + heights_nodisc_spike)
+ggtemp_spike <- data.frame(xv=seq(from=0, to=29820-1, by=bin_width/5), yv=heights_disc_frac_spike)
+
+b_disc_props_noxaxis_spike <- ggplot(ggtemp_spike, aes(x = xv, y = yv)) + geom_bar(stat='identity', width = bin_width/5)+
+  theme(legend.position = "none", axis.line=element_blank(),
+        panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),axis.text.x=element_blank(), axis.ticks.x=element_blank(),
+        panel.spacing.y = unit(0,"null"), plot.margin=unit(c(5.5,5.5,-1,5.5), "points")) + xlab(NULL) +
+  ylab("Proportion of variants with\n basecaller discrepancies") + coord_cartesian(xlim=c(21532, 25360), ylim = c(0,1), expand = FALSE, clip = 'on') + 
+  annotate("segment", x = 23030, xend = 23030, y = 1, yend = 0.95, colour = "red", size=2, alpha=1, arrow=arrow())
 
 #Plot ORF chart and this plot together:
-summary_figure <- ggarrange(disc_plot_legend, plot_grid(b_disc_props_noxaxis,
+summary_figure <- ggarrange(
+                            #disc_plot_legend,
+                            plot_grid(b_disc_props_noxaxis,
                             disc_plot_nolegend+theme(plot.margin=unit(c(-1,5.5,5.5,5.5), "points")),
-                            ncol=1, align = 'v', axis='lr', rel_heights = c(0.3, 0.7)), 
-                            heights = c(0.1, 1), labels = c('', '', ''), label.y = c(1, 1, 1), ncol=1,
-                            legend.grob = disc_plot_legend, legend = 'top') 
+                            ncol=1, align = 'v', axis='lr', rel_heights = c(0.2,0.7)), 
+                            heights = c(0.07, 1), labels = c('', '', ''), label.y = c(1, 1, 1), ncol=1
+                            #, legend.grob = disc_plot_legend, legend = 'top'
+                            ) + theme(plot.margin = unit(c(-1,5.5,-10,55.5), "points"))
 
-pdf(file=paste0(main_project_directory, "blacklist_summary_distribution_final.pdf"), width = 11, height = 8)
+#Save Figure 3 for manuscript
+pdf(file=paste0(main_project_directory, "fig3.pdf"), width = 11, height = 8)
 print(summary_figure)
 dev.off()
 
-png(file=paste0(main_project_directory, "blacklist_summary_distribution_final.png"), width = 800, height = 600)
+png(file=paste0(main_project_directory, "fig3.png"), width = 800, height = 600)
 print(summary_figure)
+dev.off()
+
+summary_figure_spike <- ggarrange(
+                                  plot_grid(b_disc_props_noxaxis_spike,
+                                  disc_plot_nolegend_spike+
+                                    theme(plot.margin=unit(c(-1,5.5,5.5,5.5), "points")),
+                                  ncol=1, align = 'v', axis='lr', rel_heights = c(0.2,0.7)), 
+                                  heights = c(0.07, 1), labels = c('', '', ''), label.y = c(1, 1, 1), ncol=1
+                                  ) + theme(plot.margin = unit(c(-1,5.5,-10,55.5), "points"))
+
+#Save Figure 3 (spike zoom) for manuscript
+pdf(file=paste0(main_project_directory, "fig3_spike.pdf"), width = 11, height = 8)
+print(summary_figure_spike)
+dev.off()
+
+png(file=paste0(main_project_directory, "fig3_spike.png"), width = 800, height = 600)
+print(summary_figure_spike)
 dev.off()
 
 #Does it look better to plot the bar chart below the ORF chart instead of splitting up the legend and ORF chart?
@@ -1448,6 +1867,8 @@ get_OR_table <- function(subsetA, subsetB, fullset){
   return(c_table)
 }
 
+numstrip <- function(stringvec){return(gsub("[^0-9.-]", "", stringvec))}
+
 #Get OR values for all major combinations of blacklisted variant features
 #The full set in this case should be the list of all variants, rather than all positions
 FULLSET <- rowglue(variants_ordered[,c(2,1,3)])
@@ -1457,10 +1878,17 @@ DEL20 <- rowglue(output_table[which(!is.na(output_table$HIGH_DEL_BASECALLERS)) ,
 VC1 <- rowglue(output_table[which(output_table$ONLY_CALLED_WITH_ONE_VARIANT_CALLER!=FALSE) ,c(2,1,3)])
 BCnot4 <- rowglue(output_table[which((!output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_MEDAKA) | (!output_table$BASECALLERS_AGREE_ON_VARIANT_CALL_NANOPOLISH)) ,c(2,1,3)])
 #ZAF <- rowglue(output_table[which(output_table$ZERO_SUPPORTING_READS) ,c(2,1,3)])
-BULL <- rowglue(output_table[which(output_table$IN_DEVESON_BLACKLIST) ,c(2,1,3)])
-DEMAIO1 <- rowglue(output_table[which(output_table$IN_GOLDMAN_MASK_LIST) ,c(2,1,3)])
-DEMAIO2 <- rowglue(output_table[which(output_table$IN_GOLDMAN_CAUTION_LIST) ,c(2,1,3)])
-DEMAIO <- c(DEMAIO1, DEMAIO2)
+BULL <- rowglue(output_table[which(output_table$IN_DEVESON_BLACKLIST) ,c(2,1,3)]) #Add other variants not in output table with '.' ALT
+BULL_add <- rowglue(bull[which(!bull$V2 %in% numstrip(BULL)), c(2,1,3)])
+BULL <- c(BULL, BULL_add)
+BULLvars <- BULL[which(BULL %in% FULLSET)]
+
+DEMAIO1 <- rowglue(output_table[which(output_table$IN_GOLDMAN_MASK_LIST) ,c(2,1,3)]) #Only blacklisted mask De Maio variants
+DEMAIO2 <- rowglue(output_table[which(output_table$IN_GOLDMAN_CAUTION_LIST) ,c(2,1,3)]) #Only blacklisted caution De Maio variants
+
+DEMAIO <- c(rowglue(demaio[which(demaio$V7 == 'mask'),c(2,1,3)]), rowglue(demaio[which(demaio$V7 == 'caution'),c(2,1,3)])) #All De Maio mask variants, including those not in output table
+#Filter out DEMAIO variants that are NEVER detected in either the blacklisted or non-blacklisted variants in the entire cohort
+DEMAIOvars <- DEMAIO[which(DEMAIO %in% FULLSET)]
 
 #Create empty table for blacklist x blacklist odds ratios
 colnames1 <- c("Blacklist features (columns) / Region features (rows)", 
@@ -1475,16 +1903,17 @@ blacklist_blacklist_OR_table <- data.frame("Blacklist features / Region features
                                            "Bull et al."=NA, "De Maio et al."=NA)
 
 #Fill in table values using list
-list_col <- list(SYSBIAS5, DEL20, VC1, BCnot4, BULL, DEMAIO)
+list_col <- list(SYSBIAS5, DEL20, VC1, BCnot4, BULLvars, DEMAIOvars)
 list_rows <- list_col
+ncomp <- 15
 for(i in 1:length(list_rows)){
   for(j in 1:length(list_col)){
     if(i>j){
       FT_result <- fisher.test(get_OR_table(list_rows[[i]], list_col[[j]], FULLSET))
       asterisks <- ""
-      if(FT_result$p.value < 0.05){asterisks <- "*"}
-      if(FT_result$p.value < 0.005){asterisks <- "**"}
-      if(FT_result$p.value < 0.0005){asterisks <- "***"}
+      if(FT_result$p.value < 0.05/ncomp){asterisks <- "*"}
+      if(FT_result$p.value < 0.005/ncomp){asterisks <- "**"}
+      if(FT_result$p.value < 0.0005/ncomp){asterisks <- "***"}
       blacklist_blacklist_OR_table[i,j+1] <- paste0(round(FT_result$estimate, digits = 3), asterisks)
     }
   }
@@ -1492,6 +1921,9 @@ for(i in 1:length(list_rows)){
 
 write.table(blacklist_blacklist_OR_table, file = paste0(blacklist_directory, "OR_table_blacklists_in_blacklists.xlsx"),
             sep = '\t', col.names = colnames1, row.names = FALSE)
+#Also format as CSV file for Supplementary Table 2
+write.table(x=blacklist_blacklist_OR_table, file = paste0(main_project_directory, "Supplementary_Table_2.csv"),
+            sep = ',', col.names = colnames1, row.names = FALSE)
 
 #Get OR values for enrichment of blacklisted variants at genomic regions of interest
 #These genomic regions are loaded/calculated in lines 92-189 of fisher_plot_suspect.R and contain no repeated values
@@ -1562,7 +1994,7 @@ numstrip <- function(stringvec){return(gsub("[^0-9.-]", "", stringvec))}
 #Also need to substitute full range of genomic loci for "FULLSET" which only covers loci at which variants are present
 FULL_LOCI <- 1:length(cov_ref_vec)
 #Also compare with non-blacklisted loci to check that enrichment is not merely a function of a position having called variants
-non_blacklisted_variants <- variants_ordered[which(!(rowglue(variants_ordered[,1:3]) %in% rowglue(output_table[,1:3]))),]
+non_blacklisted_variants <- variants_ordered[which(!(rowglue2(variants_ordered[,1:3]) %in% rowglue2(output_table[,1:3]))),]
 
 colnames2 <- c("Blacklist features (columns) / Region features (rows)", 
                "Systematic bias >5%", "DEL AF >20%", "Only called in one variant caller", "Variant call not consistent across all four basecallers",
@@ -1577,18 +2009,225 @@ blacklist_region_OR_table <- data.frame("Blacklist features / Region features"=r
 list_col <- list(numstrip(SYSBIAS5), numstrip(DEL20), numstrip(VC1), numstrip(BCnot4),
                  numstrip(BULL), numstrip(DEMAIO), non_blacklisted_variants$POS)
 list_rows <- list(homo_vec, homoflanks_vec_short, homoflanks_vec, GCgt99_vec, primer_vec, sgRNA_vec)
+ncomp <- length(list_col)*length(list_rows)
 for(i in 1:length(list_rows)){
   for(j in 1:length(list_col)){
     FT_result <- fisher.test(get_OR_table(as.numeric(list_rows[[i]]), as.numeric(list_col[[j]]), FULL_LOCI))
     asterisks <- ""
-    if(FT_result$p.value < 0.05){asterisks <- "*"}
-    if(FT_result$p.value < 0.005){asterisks <- "**"}
-    if(FT_result$p.value < 0.0005){asterisks <- "***"}
+    if(FT_result$p.value < 0.05/ncomp){asterisks <- "*"}
+    if(FT_result$p.value < 0.005/ncomp){asterisks <- "**"}
+    if(FT_result$p.value < 0.0005/ncomp){asterisks <- "***"}
     blacklist_region_OR_table[i,j+1] <- paste0(round(FT_result$estimate, digits = 3), asterisks)
   }
 }
 
 write.table(blacklist_region_OR_table, file = paste0(blacklist_directory, "OR_table_blacklists_in_regions.xlsx"),
             sep = '\t', col.names = colnames2, row.names = FALSE)
+#Also format as CSV file for Supplementary Table 3
+write.table(x=blacklist_region_OR_table, file = paste0(main_project_directory, "Supplementary_Table_3.csv"),
+            sep = ',', col.names = colnames2, row.names = FALSE)
+
+#Are coinfection variants enriched in nonDEL20? (This could partially explain lowAFs if so, rather than coinfection)-move to after output table
+nonDEL20loci <- as.character(output_table$POS[which(!is.na(output_table$HIGH_DEL_BASECALLERS))])
+coinf_loci <- numstrip(coinf_vars)
+fisher.test(get_OR_table(nonDEL20loci, coinf_loci, numstrip(FULLSET)))
+#There is strong enrichment (OR=9.22, p=1.026e-14) of nonDEL20loci in medium AF variants - this is unsurprising since DELs lower AF.
+#In total, 31 out of 150 unique coinfection variants were at DEL-rich positions, so despite this DELs are
+#NOT the source of most (80%) putative coinfection variants.
+
+#Generate remaining tables from the manuscript (Table 3 and Supplementary Table 1)
+#These are text-based, descriptive tables rather than numerical results
+
+table_3 <- data.frame(c("Feature", "Source of effect",
+                        "Allelic fraction (AF) distribution across patient cohort",
+                        "AF SD at this position", "Number of  called variants affected in cohort"),
+                      c("Hypermutation", "Real genetic diversity",
+                        "Broad range of AF values across many patients, since mutations expected to accumulate with time since infection.",
+                        "Medium", "3 variants at 2 loci"),
+                      c("Coinfection (unconfirmed)", "Real genetic diversity (if coinfection is the cause)",
+                        "Samples where a coinfection exists have medium AF variant clusters (25-75%) that are between bimodal peaks covering the majority of variants, (around 0/100% AF).",
+                        "Highest", "61/884 samples, with 150 medium AF unique variants in total"),
+                      c("Systematic Bias", "Sequencing artefact consistent across samples",
+                        "Similar fraction of reads consistently support variant in all/most samples (low to medium AF).",
+                        "Low", "19 variants"),
+                      c("NonDEL20 variant", "Sequencing artefact adjacent to homopolymer",
+                        "Bimodal, but called variant AF is lower than expected due to high number of reads supporting DEL allele.",
+                        "High", "68 variants"))
+#Write Table 3 to CSV file
+write.table(x = table_3, file = paste0(main_project_directory, "Table_3.csv"),
+            sep = ',', col.names = FALSE, row.names = FALSE)
+
+s_table_1 <- data.frame(c("Variant amino acid change (spike protein)","N501Y","E484K","L452R"),
+                        c("Nucleotide change","A23063T","G23012A","T22917G"),
+                        c("Viral lineage with this variant (country most associated with outbreak)",
+                          "B.1.1.7 (UK), B.1.351 (South Africa), B.1.1.28 (Brazil), P.1 (Brazil)",
+                          "B.1.351 (South Africa), B.1.1.28 (Brazil), B.1.525 (Nigeria)",
+                          "B.1.427/B.1.429 (USA)"))
+#Write Supplementary Table 1 to CSV file
+write.table(x = s_table_1, file = paste0(main_project_directory, "Supplementary_Table_1.csv"),
+            sep = ',', col.names = FALSE, row.names = FALSE)
+
+
 
 ##END OF SECTION 18
+
+##SECTION 19 (optional): Test intra-patient genetic diversity alternative hypotheses for variants
+#Create plots for hypermutation and potential coinfection variants showing examples of these (Figure 4 in manuscript)
+
+#Hypermutation is characterised by variants that show high SD between patients for the same variant, but not bimodal VAF
+#Co-infection is characterised by clusters of mid-AF variants that have similar AF values in the same patients
+
+#Get SD between patients for each variant
+sdframe_var <- data.frame(VAR=unique(gg_AF_data_extra$VAR), SD1=rep(NA,length(unique(gg_AF_data_extra$VAR))), SD2=rep(NA,length(unique(gg_AF_data_extra$VAR))),
+                          SD3=rep(NA,length(unique(gg_AF_data_extra$VAR))), SD4=rep(NA,length(unique(gg_AF_data_extra$VAR))), SD5=rep(NA,length(unique(gg_AF_data_extra$VAR))),
+                          SD6=rep(NA,length(unique(gg_AF_data_extra$VAR))), SD7=rep(NA,length(unique(gg_AF_data_extra$VAR))), SD8=rep(NA,length(unique(gg_AF_data_extra$VAR))),
+                          SD_meannonzeroAF=rep(NA,length(unique(gg_AF_data_extra$VAR))))
+i <- 0
+for(i in 1:length(unique(gg_AF_data_extra$VAR))){
+  sdframe_var$SD1[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),2])
+  sdframe_var$SD2[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),3])
+  sdframe_var$SD3[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),4])
+  sdframe_var$SD4[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),5])
+  sdframe_var$SD5[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),6])
+  sdframe_var$SD6[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),7])
+  sdframe_var$SD7[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),8])
+  sdframe_var$SD8[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),9])
+  sdframe_var$SD_meannonzeroAF[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$VAR == sdframe_var$VAR[i]),10])
+}
+
+#Display variant with the highest SD between patients (not counting variants with zero AF, i.e. uncalled)
+#gg_AF_data_extra[which(gg_AF_data_extra$VAR==sdframe_var$VAR[which(sdframe_var$SD_meannonzeroAF == max(sdframe_var$SD_meannonzeroAF, na.rm = TRUE))]),]
+
+#Get SD between variants in the same patient
+
+sdframe_pat <- data.frame(PAT=unique(gg_AF_data_extra$PAT), SD1=rep(NA,length(unique(gg_AF_data_extra$PAT))), SD2=rep(NA,length(unique(gg_AF_data_extra$PAT))),
+                          SD3=rep(NA,length(unique(gg_AF_data_extra$PAT))), SD4=rep(NA,length(unique(gg_AF_data_extra$PAT))), SD5=rep(NA,length(unique(gg_AF_data_extra$PAT))),
+                          SD6=rep(NA,length(unique(gg_AF_data_extra$PAT))), SD7=rep(NA,length(unique(gg_AF_data_extra$PAT))), SD8=rep(NA,length(unique(gg_AF_data_extra$PAT))),
+                          SD_meannonzeroAF=rep(NA,length(unique(gg_AF_data_extra$PAT))))
+i <- 0
+for(i in 1:length(unique(gg_AF_data_extra$PAT))){
+  sdframe_pat$SD1[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),2])
+  sdframe_pat$SD2[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),3])
+  sdframe_pat$SD3[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),4])
+  sdframe_pat$SD4[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),5])
+  sdframe_pat$SD5[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),6])
+  sdframe_pat$SD6[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),7])
+  sdframe_pat$SD7[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),8])
+  sdframe_pat$SD8[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),9])
+  sdframe_pat$SD_meannonzeroAF[i] <- sd(gg_AF_data_extra[which(gg_AF_data_extra$PAT == sdframe_pat$PAT[i]),10])
+}
+
+#gg_AF_data_extra[which(gg_AF_data_extra$PAT==sdframe_pat$PAT[which(sdframe_pat$SD1 == max(sdframe_pat$SD1))]),]
+
+#gg_AF_data_extra[which(gg_AF_data_extra$PAT==sdframe_pat$PAT[which(sdframe_pat$SD_meannonzeroAF == max(sdframe_pat$SD_meannonzeroAF))]),]
+
+#If a variant is frequently hypermutated, we would expect to see it at low AF values, and not called as a variant as a result of this, in many patients.
+#So looking at just called variants isn't a good approach for identifying these.
+#Instead look at SD ratios for all alleles, as produced against the MC model. Identify locus/allele combinations with the highest SD that don't have such low AF as to be negligible
+
+SD_data <- data.frame('POS'=NA, 'MEAN'=NA, 'SD'=NA, 'SDratio_tomin'=NA, 'SDratio_tomax'=NA, 'allele'=NA, 'basecaller'=NA)
+SD_data <- SD_data[0,]
+for(allele in c('A', 'C', 'G', 'T', 'DEL', 'INS')){
+  for(bc in c('hac', 'hac3', 'flipflop', 'rle')){
+    temp_SD_data <- read.table(paste0(incdb_directory,allele,'/',allele,'_minSDratios_',bc,'.bed'),
+                               col.names = c('POS', 'MEAN', 'SD', 'SDratio_tomin', 'SDratio_tomax'))
+    temp_SD_data$allele <- allele
+    temp_SD_data$basecaller <- bc
+    SD_data <- rbind(SD_data, temp_SD_data)
+  }
+}
+
+#Plot HAC4 allelic fraction distributions for loci at G15965GT, C6696CT and C6696T to confirm that these are hypermutations (broad AF, but not for DEL)
+#Get vector of all soloDB file names for given basecaller
+for(bc in c('hac')){
+  soloDB_filelist <- dir(path = paste0(soloDBs_directory,bc))
+  soloDB_patIDs <- paste0(soloDBs_directory, "SHEF-", unlist(strsplit(soloDB_filelist, split="_SHEF-"))[seq(from=2, by=3, length.out = length(soloDB_filelist))])
+  hac4_soloDB_list <- list()
+  #Use for loop to read in each soloDB one at a time and add to list
+  for(i in 1:length(soloDB_filelist)){
+    hac4_soloDB_list[[i]] <- read.table(paste0(soloDBs_directory,bc, '/', soloDB_filelist[i]), col.names = c('A', 'C', 'G', 'T', 'DEL', 'INS'))
+  }
+}
+#Generate ggplot boxplot for AF values of A, C, G, T, DEL, INS at 15965 and 6696
+gg_15965 <- gg_6696 <- data.frame(AF=rep(NA,884*6), allele=rep(factor(c('A', 'C', 'G', 'T', 'DEL', 'INS'), levels = c('A', 'C', 'G', 'T', 'DEL', 'INS')),884))
+for(i in 1:884){
+  for(j in 1:6){
+    gg_15965[(i*6-6+j),1] <- hac4_soloDB_list[[i]][15965,j]
+    gg_6696[(i*6-6+j),1] <- hac4_soloDB_list[[i]][6696,j]
+    if(j==6){
+      gg_15965[(i*6-6+j),1] <- hac4_soloDB_list[[i]][15965+1,j]
+      gg_6696[(i*6-6+j),1] <- hac4_soloDB_list[[i]][6696+1,j]
+    }
+  }
+}
+gg_6696$Position <- '6696'
+gg_15965$Position <- '15965'
+gg_hyper <- rbind(gg_6696, gg_15965)
+hyper_p <- ggplot(data = gg_hyper, mapping = aes(y=AF, x=allele, fill=Position)) + geom_boxplot() +
+  theme(text = element_text(size=16), axis.text = element_text(size=16)) +
+  ylab("Allelic fraction") + xlab("Allele") + scale_y_continuous(limits=c(-0.01,1.01), expand = c(0,0)) +
+  scale_fill_manual(values = c("#2EA9B0", "#EA5D4E"))
+
+pdf(file=paste0(main_project_directory, "hypermutation_AFs.pdf"), width = 5.5, height = 4)
+print(hyper_p)
+dev.off()
+
+png(file=paste0(main_project_directory, "hypermutation_AFs.png"), width = 400, height = 300)
+print(hyper_p)
+dev.off()
+
+#Plot combined ggarrange figure for hypermutation and coinfection respectively
+
+##Generate ggplot figure for PyClone results, showing medium AF clusters with 2+ variants
+#Load in PyClone results, removing single locus clusters and non-medium AF loci
+list_of_pyclone_loci_table_paths <- paste0(pyclone_results_directory,
+                                           names(which(coinfection_patient_table>=5)),
+                                           '/nanopolish/hac4/tables/loci.tsv')
+
+pyclone_table <- read.table(list_of_pyclone_loci_table_paths[1], header = TRUE, as.is = TRUE)
+pyclone_table$sample_id <- as.character(1)
+pyclone_table <- pyclone_table[which(pyclone_table$variant_allele_frequency < 0.75 & pyclone_table$variant_allele_frequency > 0.25 &
+                                       pyclone_table$cluster_id %in% names(which(table(pyclone_table$cluster_id)>1))),]
+
+for(i in 2:length(list_of_pyclone_loci_table_paths)){
+  temp_pyclone_table <- read.table(list_of_pyclone_loci_table_paths[i], header = TRUE, as.is = TRUE)
+  temp_pyclone_table$sample_id <- as.character(i)
+  temp_pyclone_table <- temp_pyclone_table[which(temp_pyclone_table$variant_allele_frequency < 0.75 & temp_pyclone_table$variant_allele_frequency > 0.25 &
+                                                   temp_pyclone_table$cluster_id %in% names(which(table(temp_pyclone_table$cluster_id)>1))),]
+  if(!(0 %in% unique(temp_pyclone_table$cluster_id))){temp_pyclone_table$cluster_id <- (temp_pyclone_table$cluster_id - 1)}
+  pyclone_table <- rbind(pyclone_table, temp_pyclone_table)
+}
+
+pyclone_table$cluster_id <- as.character(pyclone_table$cluster_id+1)
+names(pyclone_table)[3] <- "Cluster"
+
+#Plot ggplot violin plots for this
+pycloneplot <- ggplot(pyclone_table, mapping = aes(x=sample_id, y=cellular_prevalence, color=Cluster)) + geom_violin() + geom_point() +
+  theme(text = element_text(size=16), axis.text = element_text(size=16)) +
+  scale_y_continuous(limits = c(0,1), expand = c(0,0)) + ylab(label = 'Variant PyClone prevalence') + xlab(label ='Sample no.') +
+  scale_color_manual(values = c("#F29330", "#46A86C", "#46A86C"), labels=c("", "", ""))
+
+#Save PyClone plot
+pdf(file=paste0(main_project_directory, "PyClone_6samples_plot.pdf"), width = 5.5, height = 4)
+print(pycloneplot)
+dev.off()
+
+png(file=paste0(main_project_directory, "PyClone_6samples_plot.png"), width = 400, height = 300)
+print(pycloneplot)
+dev.off()
+
+##Now make ggarrange plot with A,B labels panels side-by-side
+fig4 <- ggarrange(hyper_p + theme(plot.margin=unit(c(0.4,0.9,0.2,0.9),"cm")),
+                  pycloneplot + theme(plot.margin=unit(c(0.4,0.0,0.2,0.9),"cm")),
+                  ncol=2, align='hv', labels = c('A', 'B'), font.label = list(size=22))
+
+#Save Figure 4 for manuscript
+pdf(file=paste0(main_project_directory, "fig4.pdf"), width = 11.0, height = 4)
+print(fig4)
+dev.off()
+
+png(file=paste0(main_project_directory, "fig4.png"), width = 800, height = 300)
+print(fig4)
+dev.off()
+
+##END OF SECTION 19
