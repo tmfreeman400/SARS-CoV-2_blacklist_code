@@ -419,6 +419,16 @@ kuipers_pub_vars <- c("T11075", "G11083T", "G24933T", "G15965GT", "G558T", "G356
 kuipers_swiss_vars <- c("C3037T", "A23403G", "C13225", "G10265", "C27040", "T26465", "C19718", "G27033", "C25521T", "A26434")
 intersect(coinf_vars, kuipers_pub_vars) # "C6696T"  "G11083T" (2 out of 10)
 intersect(coinf_vars, kuipers_swiss_vars) # "A23403G" "C3037T" (2 out of 10)
+
+#Define function to get the contingency table for odds ratio calculation (OR) of two sets of values that are subsets of a larger group
+get_OR_table <- function(subsetA, subsetB, fullset){
+  AB <- unique(intersect(subsetA, subsetB))
+  Ab <- unique(setdiff(subsetA, subsetB))
+  aB <- unique(setdiff(subsetB, subsetA))
+  ab <- unique(setdiff(fullset, unique(c(subsetA, subsetB))))
+  c_table <- matrix(c(length(AB), length(Ab), length(aB), length(ab)), nrow = 2, dimnames = list(c("In B", "Not in B"),c("In A", "Not in A")))
+  return(c_table)
+}
 fisher.test(get_OR_table(coinf_vars, c(kuipers_swiss_vars, kuipers_pub_vars), FULLSET))
 #No significant enrichment (OR=2.65, p=0.09)
 
