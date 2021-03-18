@@ -429,7 +429,7 @@ get_OR_table <- function(subsetA, subsetB, fullset){
   c_table <- matrix(c(length(AB), length(Ab), length(aB), length(ab)), nrow = 2, dimnames = list(c("In B", "Not in B"),c("In A", "Not in A")))
   return(c_table)
 }
-fisher.test(get_OR_table(coinf_vars, c(kuipers_swiss_vars, kuipers_pub_vars), FULLSET))
+#fisher.test(get_OR_table(coinf_vars, c(kuipers_swiss_vars, kuipers_pub_vars), FULLSET))
 #No significant enrichment (OR=2.65, p=0.09)
 
 ##END OF SECTION 5
