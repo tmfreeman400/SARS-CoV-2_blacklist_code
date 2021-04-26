@@ -7,3 +7,10 @@
 3) main_R_script.R (R script)
 
 This reproduces all results and figures for this study.
+
+Also included in this directory is the python3 script sarscov2blacklister.py - this script takes the following arguments:
+The file path to the inut VCF you would like to annotate (-i)
+The file path to Freeman_full_blacklist.xlsx (-b)
+The script outputs a modified VCF file with the altered ending ".bl.vcf" instead of ".vcf" to avoid overwriting the original VCF
+The modified VCF has an additional two columns "BLACKLIST?" and "REASON" which state whether each variant was blacklisted in the study (mask, caution or not_blacklisted), and why, if it was blacklisted.
+The script requires the python modules vcf, csv, sys and getopt
