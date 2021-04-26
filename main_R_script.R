@@ -1,5 +1,4 @@
-#Main R script for covid manuscript, incorporating elements of get_aligner_comparison_stats_v2.R, load_solo_DB_AFs.R and generate_combined_blacklist.R
-#In that order.
+#Main R script for covid manuscript, produces all results and figures
 
 #Load all necessary packages
 
@@ -59,7 +58,7 @@ pyclone_results_directory <- '/media/tim/DATA/MovedDownloads/coronavirus_experim
 #Also provide paths to the following required files:
 fasta_path = '/media/tim/DATA/MovedDownloads/coronavirus_experiments/nCoV-2019.reference.fasta' #Path to SARS-CoV-2 reference sequence fasta file
 bull_et_al_blacklist_path <- '/media/tim/DATA/MovedDownloads/coronavirus_experiments/blacklists/ONT_blacklist_regions_deveson.covid.vcf'
-demaio_et_al_blacklist_path <- '/media/tim/DATA/MovedDownloads/coronavirus_experiments/blacklists/problematic_sites_sarsCov2_updated_DEC_goldman.vcf'
+demaio_et_al_blacklist_path <- '/media/tim/DATA/MovedDownloads/coronavirus_experiments/blacklists/problematic_sites_sarsCov2_updated_APRIL_goldman.vcf'
 artic_primers_path <- "/media/tim/DATA/MovedDownloads/coronavirus_experiments/artic_primers_V3.bed"
 qPCR_primers_path <- "/media/tim/DATA/MovedDownloads/coronavirus_experiments/qPCR_primers.bed"
 sheffield_sgRNA_path <- "/media/tim/DATA/MovedDownloads/coronavirus_experiments/all_novel.csv"
@@ -377,6 +376,11 @@ for(i in 1:nrow(unique_pat_AFdistr)){
 #Order gg_AF_data_extra by meannonzeroAF column
 gg_AF_data_extra <- gg_AF_data_extra[order(gg_AF_data_extra$meannonzeroAF),]
 
+#Identify variants that are >25% in hac3, and <25% AF in the other basecallers (nanopolish)
+hac3clustergt25 <- table(gg_AF_data_extra[which(gg_AF_data_extra$nano_hac3<0.4 & gg_AF_data_extra$nano_hac3>0.25 & 
+                                                (gg_AF_data_extra$nano_rle<0.25 | gg_AF_data_extra$nano_hac4<0.25 | gg_AF_data_extra$nano_flipflop<0.25) &
+                                                (gg_AF_data_extra$nano_rle>0.01 | gg_AF_data_extra$nano_hac4>0.01 | gg_AF_data_extra$nano_flipflop>0.01)),]$VAR)
+
 #Which patients have multiple recurrently-called low AF variants?
 gg_AF_data_extra_recurrent <- gg_AF_data_all_recurrent 
 gg_AF_data_extra_recurrent$meannonzeroAF <- NA
@@ -546,21 +550,21 @@ venn.diagram(list(Medaka = which(all_rows$only_called_with %in% c("medaka", "bot
              alpha = c(0.5, 0.5), lwd =0, paste0(main_project_directory, "vcaller_overlap_venn_diagram.tiff"),
              main="Unique called variants", imagetype = 'tiff', margin=1.75, ext.text=FALSE,
              main.pos=c(0.5, 0.57), height = 2000, width = 2000, cat.default.pos="outer", cat.just = list(c(0.6,0), c(0.6,0)),
-             main.fontfamily = "Arial", main.cex = 2, cat.fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
+             main.fontfamily = "Arial", fontfamily = "Arial", main.cex = 2, cat.fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
 
 venn.diagram(list(Medaka = which(all_rows$only_called_with %in% c("medaka", "bothVC")),
                   Nanopolish = which(all_rows$only_called_with %in% c("nanopolish", "bothVC"))), fill=c("#2EA9B0", "#EA5D4E"), 
              alpha = c(0.5, 0.5), lwd =0, paste0(main_project_directory, "vcaller_overlap_venn_diagram.png"),
              main="Unique called variants", imagetype = 'png', margin=1.75, ext.text=FALSE,
              main.pos=c(0.5, 0.57), height = 2000, width = 2000, cat.default.pos="outer", cat.just = list(c(0.6,0), c(0.6,0)),
-             main.fontfamily = "Arial", main.cex = 2, cat.fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
+             main.fontfamily = "Arial", fontfamily = "Arial", main.cex = 2, cat.fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
 
 venn.diagram(list(Medaka = which(all_rows$only_called_with %in% c("medaka", "bothVC")),
                   Nanopolish = which(all_rows$only_called_with %in% c("nanopolish", "bothVC"))), fill=c("#2EA9B0", "#EA5D4E"), 
              alpha = c(0.5, 0.5), lwd =0, paste0(main_project_directory, "vcaller_overlap_venn_diagram_notitle.png"),
              imagetype = 'png', margin=0.05, ext.text=FALSE,
              height = 2000, width = 2000, cat.default.pos="outer", cat.just = list(c(0.6,0), c(0.6,0)),
-             cat.fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
+             cat.fontfamily = "Arial", fontfamily = "Arial", cat.cex = 1.5, cex=1.5)
 
 all_rows <- all_rows[which(all_rows$only_called_with!="bothVC"),]
 all_rows <- all_rows[order(all_rows[,1]),]
@@ -937,11 +941,11 @@ fig2 <- ggarrange(ggarrange(plotlist = list(igv1, igv2), nrow=1, ncol=2,
                   nrow = 2, widths = c(1,1))
 
 #Save Figure 2 for manuscript
-pdf(file=paste0(main_project_directory, "fig2.pdf"), width = 22, height = 26)
+pdf(file=paste0(main_project_directory, "fig2.pdf"), width = 24.2, height = 26)
 print(fig2)
 dev.off()
 
-png(file=paste0(main_project_directory, "fig2.png"), width = 1600, height = 1800)
+png(file=paste0(main_project_directory, "fig2.png"), width = 1760, height = 1800)
 print(fig2)
 dev.off()
 
@@ -1265,7 +1269,7 @@ bc_disagree_bothvc <- read.table('variants_never_called_with_all_BC_bothVC.bed',
 bc_disagree_bothvc_glued <- rowglue2(bc_disagree_bothvc)
 
 bc_disagree_medaka <- read.table('inconsistently_called_in_medaka.bed', header = TRUE, sep = '\t')
-bc_disagree_medaka_glued <- unique(c(rowglue2(bc_disagree_medaka[,1:3]), bc_disagree_bothvc_glued))
+bc_disagree_medaka_glued <- unique(c(rowglue2(bc_disagree_medaka[,1:3])))
 bc_disagree_nanopolish <- read.table('inconsistently_called_in_nanopolish.bed', header = TRUE, sep = '\t')
 bc_disagree_nanopolish_glued <- unique(c(rowglue2(bc_disagree_nanopolish[,1:3]), bc_disagree_bothvc_glued))
 
@@ -2173,10 +2177,14 @@ for(i in 1:884){
 gg_6696$Position <- '6696'
 gg_15965$Position <- '15965'
 gg_hyper <- rbind(gg_6696, gg_15965)
-hyper_p <- ggplot(data = gg_hyper, mapping = aes(y=AF, x=allele, fill=Position)) + geom_boxplot() +
+hyper_p <- ggplot(data = gg_hyper, mapping = aes(y=AF, x=allele, fill=Position)) +
+  geom_point(data = gg_hyper, mapping = aes(y=AF, x=allele, colour=Position),
+             position = position_jitterdodge(jitter.height = 0), alpha=0.1, size=1)+
+  geom_boxplot(outlier.shape=NA) +
   theme(text = element_text(size=16), axis.text = element_text(size=16)) +
-  ylab("Allelic fraction") + xlab("Allele") + scale_y_continuous(limits=c(-0.01,1.01), expand = c(0,0)) +
-  scale_fill_manual(values = c("#2EA9B0", "#EA5D4E"))
+  ylab("Allelic fraction") + xlab("Allele") + scale_y_continuous(limits=c(-0.0,1.0), expand = c(0,0)) +
+  scale_fill_manual(values = c("#2EA9B0", "#EA5D4E"))+
+  scale_colour_manual(values = c("#2EA9B0", "#EA5D4E"))
 
 pdf(file=paste0(main_project_directory, "hypermutation_AFs.pdf"), width = 5.5, height = 4)
 print(hyper_p)
