@@ -4,9 +4,11 @@
 """
 Created on Mon Apr 26 12:45:18 2021
 
-sarscov2vcfblacklister.py
-This python script takes a VCF input on the command line
+sarscov2vcfblacklister.py as described in Freeman et al. 2021
+This python script takes a VCF input on the command line with -i
+Input the path to the Freeman_full_blacklist.xlsx file with -b
 Outputs an annotated version of the VCF stating if variants are blacklisted
+Output file has altered ending ".bl.vcf" instead of ".vcf" to avoid overwrite
 
 The following python modules are required: vcf, csv, sys, getopt
 
