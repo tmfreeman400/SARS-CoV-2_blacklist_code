@@ -5,10 +5,16 @@
 Created on Mon Apr 26 12:45:18 2021
 
 sarscov2vcfblacklister.py as described in Freeman et al. 2021
+
+This python script adds an extra two fields to the VCF file:
+The "BLACKLIST?" field (column 10 after header) annotates variants
+as either mask, caution or not_blacklisted.
+The "REASON" field (column 11 after header) is NA for non-blacklisted variants,
+otherwise it states why that variant was blacklisted.
+Output file has altered ending ".bl.vcf" instead of ".vcf", to avoid overwrite
+
 This python script takes a VCF input on the command line with -i
 Input the path to the Freeman_full_blacklist.xlsx file with -b
-Outputs an annotated version of the VCF stating if variants are blacklisted
-Output file has altered ending ".bl.vcf" instead of ".vcf" to avoid overwrite
 
 The following python modules are required: vcf, csv, sys, getopt
 
